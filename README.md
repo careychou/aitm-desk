@@ -1,49 +1,102 @@
 # AITM Desk
 
-A lightweight, Copilot-style macOS desktop agent for **your own models**. You get a chat UI with a main agent plus **sync, parallel and background sub-agents**, and tools that can write and **run code**. It loads skills and agents the same way GitHub Copilot does, from `<folder>/.github/` and `~/.copilot/`.
+**A lightweight, Copilot-style desktop agent for _your own_ models.**
 
-![screenshot](docs/screenshot.png)
+AITM Desk is a small macOS app that gives you a GitHub Copilot–like chat experience — a main agent that can call tools, load skills, and delegate to sub-agents — but pointed at **any OpenAI-compatible model endpoint** you control (a local proxy, vLLM, Ollama, LiteLLM, a cloud gateway, …). No repo, git or PR features: just a prompt box, an agent, and your working folder.
 
-## Features
-- Works with any **OpenAI-compatible** `/v1/chat/completions` endpoint that supports streaming and tool calling. The default is `http://127.0.0.1:4141/v1` (heb-model-proxy). The proxy handles the Anthropic translation, so Claude and the OpenAI-style models all work through one adapter.
-- **Skills** (`skills/*/SKILL.md`) are loaded on demand: the system prompt lists only each skill's name and description, and the model calls the `skill` tool to load the full body.
-- **Agents** (`agents/*.agent.md`): the `task` tool runs one as a sub-agent with fresh context, using the agent body as its system prompt and its `tools:` list as a whitelist.
-- **Sub-agents**: several `task` calls in one turn run in parallel. `mode: "background"` returns at once and the result comes back through `read_agent`. Delegation is limited to depth 2, model calls are capped by a concurrency limit, and Stop cancels the whole agent tree.
-- **Tools**: `shell`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `skill`, `task`, `read_agent`, `list_agents`, `ask_user`.
-- **Approval prompts** before shell commands and file writes (allow once, allow for the session, or deny).
-- **Working folders**: the sidebar groups chats by folder, Copilot-style. Choose the folder when you start a new chat. Skills and agents load from that folder's `.github/` plus `~/.copilot/`.
-- **Fork from any turn**: hover a turn and click *⑂ Fork from here*. You get a new chat with the history up to that point, filed under the chat it came from, and forks can be forked again.
-- **Model thinking**: a Copilot-style *Thinking / Thought* block that streams the model's reasoning, then collapses to a one-line peek. Each chat picks its own effort (💭 off / low / medium / high) under its chat box; Settings sets the default for new chats. The app sends `include_reasoning` and `reasoning_effort`, and reads `reasoning_content` / `reasoning`, inline `<think>` tags, and Gemini thought parts. For Claude, the proxy has to turn on Anthropic adaptive thinking with summarized display.
-- **Share a session**: click *⇪ Share* under the chat box or ⇪ on a chat in the sidebar. Export all turns or pick specific ones, optionally including tool calls and thinking. You get a Markdown file (default location `~/Documents/AITM Desk/shares/`) or a clipboard copy.
-- **Memory from shared sessions**: *＋ Memory* attaches one or more exported `.md` files to a chat. Their content goes into the main agent's system prompt as prior context (capped at about 60k characters per file), so the agent picks up where the earlier session left off. Memories are saved per chat and carry over to forks.
-- **Organize chats**: every chat has a ⋯ menu (or right-click) with Rename (double-click works too), Pin, Move up/down, Share, Compact and Delete.
-- **Bookmarks**: a pinned section at the top of the sidebar. Use ＋ to create bookmark folders (nested is fine), and pin chats into them from the chat's ⋯ menu. Pins and folders can be reordered or moved between folders. Deleting a folder moves its pins up a level.
-- **Compact history** (*⇲ Compact* under the chat box, which also shows the estimated context size): the model groups earlier turns into **related-topic clusters**, even when they aren't next to each other (it falls back to keyword overlap). Tick whole clusters or single turns to **summarize**; unticked turns are **dropped** from the agent's context. The last N turns stay word-for-word. The chat view keeps every turn and shows an expandable "Compacted" marker with the summary. Settings → *Long chats* can suggest compacting or auto-compact past a token threshold.
-- **Sessions** are saved in SQLite (`node:sqlite`) under `~/Library/Application Support/aitm-desk/`.
+It reads skills and agents from the same places Copilot does — `<folder>/.github/` and `~/.copilot/` — so an existing skill/agent library works out of the box.
 
-## Run
+![AITM Desk: parallel sub-agents, skills, thinking blocks](docs/screenshot.png)
+
+## Download
+
+Grab the latest build from **[Releases](https://github.com/careychou/aitm-desk/releases)**:
+
+| File | What |
+|---|---|
+| `AITM Desk-<version>-arm64.dmg` | Installer for Apple Silicon Macs (drag to Applications) |
+| `AITM Desk-<version>-arm64.zip` | Same app, zipped |
+
+> **The app is not code-signed.** macOS will say it "is damaged" or "can't be opened". After copying it to Applications, run once:
+> ```bash
+> xattr -cr "/Applications/AITM Desk.app"
+> ```
+> Or right-click the app → **Open**. Intel Macs: build from source (below).
+
+On first launch open **⚙ Settings** and set your model endpoint's **Base URL** and **API key**, then click *Test connection*.
+
+## Main features
+
+### Agent
+- **Any OpenAI-compatible model** — streaming `/v1/chat/completions` with tool calling. The model list comes from `/v1/models`; switch models per chat.
+- **Tools** — `shell`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `skill`, `task`, `read_agent`, `list_agents`, `ask_user`. Independent tool calls run in parallel.
+- **Approvals** — shell commands and file writes ask first: *allow once*, *allow for this chat*, or *deny*.
+- **Sub-agents** — the `task` tool runs a sub-agent with fresh context. Several `task` calls in one turn run **in parallel**; `mode: "background"` returns immediately and the result is fetched later with `read_agent` (the main agent is woken when it finishes). Nested delegation is capped at depth 2; Stop cancels the whole tree.
+- **Model thinking** — a Copilot-style *Thinking → Thought* block streams the model's reasoning and collapses to a one-line peek. Per-chat effort: 💭 off / low / medium / high. Reads `reasoning_content` / `reasoning`, inline `<think>` tags, and Gemini thought parts.
+
+### Skills & agents (Copilot-compatible)
+- **Skills**: `skills/<name>/SKILL.md` with YAML front-matter (`name`, `description`). Only names + descriptions go into the prompt; the model loads a skill's full body on demand with the `skill` tool.
+- **Agents**: `agents/<name>.agent.md` (`name`, `description`, `tools`). The body becomes the sub-agent's system prompt and `tools:` its whitelist (aliases like `read`, `search`, `edit`, `execute`, `agent` are understood).
+- Loaded from the chat's working folder (`.github/`) **plus** your personal `~/.copilot/`; also picks up `copilot-instructions.md` from both.
+
+### Chats & organization
+- **Working folders** — the sidebar groups chats by folder, Copilot-style. Pick the folder when starting a chat; skills/agents reload per folder.
+- **Fork from any turn** — hover a turn → *⑂ Fork from here*. The fork gets the history up to that point and is filed **under the chat it came from** (forks of forks nest).
+- **Rename, reorder, delete** — ⋯ menu / right-click / double-click to rename; move up/down.
+- **Bookmarks** — a pinned section at the top of the sidebar with nestable folders. Pin chats into folders, reorder, move between folders.
+
+### Memory & context
+- **Share a session** — export **all turns or selected turns** to Markdown (optionally with tool calls and thinking), save to a file or copy to clipboard.
+- **Attach exports as memory** — *＋ Memory* attaches one or more exported `.md` files to a chat; the agent starts with them as prior context. Great for handing work between sessions or people.
+- **Smart compaction** — *⇲ Compact* (which also shows the estimated context size) groups earlier turns into **related-topic clusters** — even non-adjacent ones when a long chat pivoted and came back. Tick whole clusters or single turns to **summarize**; unticked turns are **dropped** from the model's context; the last N turns stay verbatim. Long chats can be flagged or auto-compacted past a token threshold (Settings → *Long chats*).
+
+### Under the hood
+- Electron + React UI over a **headless TypeScript engine** (also usable from a CLI).
+- Sessions, forks, bookmarks stored locally in SQLite (`node:sqlite`) under `~/Library/Application Support/aitm-desk/`. API key encrypted with macOS Keychain (`safeStorage`).
+- No telemetry. The only network calls go to the model endpoint you configure.
+
+## Model endpoint notes
+
+Any endpoint that speaks the OpenAI Chat Completions API with streaming + tools works. Defaults: `http://127.0.0.1:4141/v1` (override in Settings or with `AITM_BASE_URL` / `AITM_API_KEY`).
+
+For thinking blocks the app sends `reasoning_effort` and a non-standard `include_reasoning: true` hint. Models that already stream `reasoning_content` (DeepSeek, GLM, gpt-oss, Qwen…) just work. For Anthropic Claude behind an OpenAI-style proxy, the proxy must enable Claude's (adaptive, summarized) extended thinking and map it to `reasoning_content`.
+
+## Build from source
+
+Requires Node 22.5+ (for `node:sqlite`) — tested with Node 25.
+
 ```bash
+git clone https://github.com/careychou/aitm-desk.git
+cd aitm-desk
 npm install
-npm run build && npm start      # desktop app
-npm run dev                     # hot-reload dev mode
-npm test                        # vitest (engine, tools, registry, adapter)
+npm run dev            # hot-reload dev mode
+npm test               # vitest: engine, tools, registry, adapter, compaction, export
+npm run dist           # → dist/AITM Desk-<version>-arm64.dmg / .zip
+npm run dist:dir       # → dist/mac-arm64/AITM Desk.app (fast, unpacked)
 ```
 
 ### Headless CLI (same engine)
 ```bash
 npm run cli -- --models
-npm run cli -- --cwd ~/projects/aitm --model anthropic/claude-sonnet-5 -p "load st-common and summarize it"
+npm run cli -- --cwd ~/my-project --model my-model -p "list the skills you have"
 npm run cli -- --yes -p "..."   # auto-approve shell and file writes
 ```
 
-The API key comes from Settings in the app. Otherwise it falls back to `AITM_API_KEY`, then to the `api_key` in `~/heb-model-proxy/models.json`. The base URL comes from `AITM_BASE_URL`.
-
-## Layout
+## Project layout
 ```
-src/engine/    headless agent engine (adapter, registry, tools, loop, manager, session)
+src/engine/    headless agent engine: adapter, registry, tools, loop, sub-agent manager, session, compaction
 src/cli/       terminal runner
 src/main/      Electron main: settings (safeStorage), SQLite store, IPC
 src/preload/   contextBridge API
 src/renderer/  React UI
+src/shared/    fork/tree, export helpers shared by main + renderer
 docs/          design spec + implementation plan
 ```
+
+## Status
+
+Early, personal project (v0.1). macOS / Apple Silicon is the only packaged target. Issues and PRs welcome.
+
+## License
+
+[MIT](LICENSE)

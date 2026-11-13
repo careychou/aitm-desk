@@ -11,7 +11,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "cli": "tsx src/cli/index.ts",
-    "dist": "electron-vite build && electron-builder --mac dir"
+    "dist": "electron-vite build && electron-builder --mac",
+    "dist:dir": "electron-vite build && electron-builder --mac dir"
   },
   "build": {
     "appId": "dev.careychou.aitm-desk",
@@ -20,8 +21,24 @@
       "out/**"
     ],
     "mac": {
-      "target": "dir"
-    }
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.developer-tools"
+    },
+    "artifactName": "${productName}-${version}-${arch}.${ext}",
+    "publish": null
   },
   "dependencies": {
     "dompurify": "^3.4.17",
@@ -44,5 +61,11 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.8",
     "vitest": "^4.1.12"
+  },
+  "license": "MIT",
+  "author": "Carey Chou",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/careychou/aitm-desk.git"
   }
 }

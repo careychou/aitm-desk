@@ -5,7 +5,7 @@
 ## 1. Goal
 A lightweight macOS desktop app, styled like the GitHub Copilot app, for running an
 agent (with sub-agents) against custom models served by the local
-`heb-model-proxy`. No repo/git/PR features. It loads skills, agents, and
+`a local OpenAI-compatible model proxy`. No repo/git/PR features. It loads skills, agents, and
 instructions the same way Copilot does, from the working folder's `.github/` and
 from `~/.copilot/`.
 
@@ -14,7 +14,7 @@ Git, worktrees, PRs, MCP servers, context compaction, image attachments,
 cloud sync, auto-update, multi-window.
 
 ## 3. Constraints and verified facts
-- Model backend: `heb-model-proxy` at `http://127.0.0.1:4141/v1` (OpenAI-compatible).
+- Model backend: `a local OpenAI-compatible model proxy` at `http://127.0.0.1:4141/v1` (OpenAI-compatible).
   `GET /v1/models` returns 11 models. `POST /v1/chat/completions` serves all of them.
   The proxy translates Claude models to the Anthropic API on the server side, so
   the app needs **one OpenAI-compatible adapter** to cover both dialects.
@@ -38,7 +38,7 @@ flowchart LR
   ENG --> MGR[AgentManager]
   MGR --> LOOP[AgentLoop xN]
   LOOP --> ADP[OpenAIAdapter]
-  ADP --> PX[heb-model-proxy :4141]
+  ADP --> PX[local model proxy :4141]
   LOOP --> TOOLS[ToolRegistry]
   TOOLS --> PERM[PermissionGate]
   ENG --> REG[Registry: skills/agents/instructions]

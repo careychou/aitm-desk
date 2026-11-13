@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A Copilot-like macOS Electron app that runs a main agent plus sync/parallel/background sub-agents against heb-model-proxy, loading skills, agents, and instructions from `.github/` and `~/.copilot/`.
+**Goal:** A Copilot-like macOS Electron app that runs a main agent plus sync/parallel/background sub-agents against a local OpenAI-compatible model proxy, loading skills, agents, and instructions from `.github/` and `~/.copilot/`.
 
 **Architecture:** A headless TypeScript engine (adapter → loop → tools → manager) lives in `src/engine`, is driven by the Electron main process over IPC, and is also driven by a CLI for tests. The React renderer only renders events.
 
