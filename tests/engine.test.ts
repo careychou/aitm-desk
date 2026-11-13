@@ -37,6 +37,47 @@ function mk(script: Script, extra: Partial<ConstructorParameters<typeof Session>
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 describe('Session main loop', () => {
+  it('injects a prompt sent mid-run into the same conversation at the next step', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => { release = r })
+    const { s, adapter, events } = mk(async (r) => {
+      if (adapter.calls.length === 1) { await gate; return [call('c1', 'glob', { pattern: '*' }), { type: 'finish', reason: 'tool_calls' }] }
+      return say(`saw: ${lastUser(r)}`)
+    })
+    const first = s.send('first')
+    await sleep(10)
+    expect(await s.send('steer left', [], 'q1')).toEqual({ status: 'queued', text: '' })
+    release()
+    expect(await first).toEqual({ status: 'completed', text: 'saw: steer left' })
+    expect(adapter.calls).toHaveLength(2)
+    const roles = adapter.calls[1].messages.slice(-3).map((m) => m.role)
+    expect(roles).toEqual(['assistant', 'tool', 'user'])
+    expect(events.filter((e) => e.kind === 'user_input').map((e: any) => e.qid)).toEqual(['q1'])
+  })
+
+  it('runs queued prompts after a final answer, then clears the queue on stop', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => { release = r })
+    const { s, adapter, events } = mk(async (r) => { if (adapter.calls.length === 1) await gate; return say(`re: ${lastUser(r)}`) })
+    const first = s.send('one')
+    await sleep(10)
+    await s.send('two', [], 'q2')
+    release()
+    expect(await first).toEqual({ status: 'completed', text: 're: two' })
+    expect(adapter.calls).toHaveLength(2)
+
+    let unblock!: () => void
+    const blocked = new Promise<void>((r) => { unblock = r })
+    const hang = mk(async () => { await blocked; return say('late') })
+    const run = hang.s.send('a')
+    await sleep(10)
+    await hang.s.send('b', [], 'qb')
+    hang.s.stop(); unblock()
+    expect((await run).status).toBe('cancelled')
+    expect(hang.events.find((e) => e.kind === 'queue_cleared')).toMatchObject({ qids: ['qb'] })
+    expect(hang.s.queued).toHaveLength(0)
+  })
+
   it('loads attached memory exports into the system prompt and can swap them', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mem-'))
     fs.writeFileSync(`${dir}/a.md`, 'MEMORY_A_FACT'); fs.writeFileSync(`${dir}/b.md`, 'MEMORY_B_FACT')

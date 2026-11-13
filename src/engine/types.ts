@@ -50,6 +50,10 @@ export type AgentEvent =
   | { kind: 'agent_end'; agentId: string; status: AgentStatus; finalText: string }
   | { kind: 'usage'; agentId: string; prompt: number; completion: number }
   | { kind: 'error'; agentId: string; message: string }
+  /** A prompt queued while the agent was working has just been added to the conversation. */
+  | { kind: 'user_input'; agentId: string; qid: string }
+  /** Queued prompts discarded because the run was stopped or failed. */
+  | { kind: 'queue_cleared'; agentId: string; qids: string[] }
 
 export type PermissionKind = 'shell' | 'write'
 export type PermissionDecision = 'allow' | 'allow_session' | 'deny'

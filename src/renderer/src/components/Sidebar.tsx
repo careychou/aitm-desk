@@ -246,7 +246,7 @@ export function Sidebar(p: Props) {
   return (
     <aside className="sidebar">
       <div className="side-top">
-        <button className="icon" title="Hide sidebar" onClick={p.onCollapse}>◧</button>
+        <button className="icon" title="Hide sidebar (⌘B)" onClick={p.onCollapse}>◧</button>
       </div>
       <button className="new-chat" onClick={() => p.onNewChat('')}>✎ New chat</button>
       <div className="sessions">

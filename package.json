@@ -1,6 +1,6 @@
 {
   "name": "aitm-desk",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Lightweight Copilot-like desktop agent for custom models",
   "main": "out/main/index.js",
   "type": "commonjs",

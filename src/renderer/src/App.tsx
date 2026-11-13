@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { BookmarkRow, FolderRow, Listing, PreparedAttachment, PushEvent, RegistryInfo, SessionRow } from '../../shared/api'
+import type { AttachMeta, BookmarkRow, FolderRow, Listing, PreparedAttachment, PushEvent, RegistryInfo, SessionRow } from '../../shared/api'
 import { insertBeforeTurn } from '../../shared/fork'
 import { applyEvent, runningBackground, settle, type Item } from './state'
 import { ItemList } from './components/Cards'
@@ -16,6 +16,10 @@ const SUGGESTIONS = [
   'Write a Python script that summarizes the files in this folder, then run it.',
   'Use two parallel sub-agents to research a topic from two angles and merge the findings.'
 ]
+/** A prompt sent while the chat was working; it joins the conversation at the agent's next step. */
+type Queued = { qid: string; text: string; attachments?: AttachMeta[] }
+const userItem = (text: string, attachments?: AttachMeta[]): Item => (attachments?.length ? { t: 'user', text, attachments } : { t: 'user', text })
+const SIDE_MIN = 220, SIDE_MAX = 560, SIDE_DEFAULT = 300
 const base = (p: string) => p.split('/').filter(Boolean).pop() ?? p
 
 export function App() {
@@ -43,7 +47,26 @@ export function App() {
   const [perms, setPerms] = useState<PermissionReq[]>([])
   const [asks, setAsks] = useState<AskReq[]>([])
   const [showSettings, setShowSettings] = useState(false)
-  const [sidebar, setSidebar] = useState(true)
+  const [sidebar, setSidebar] = useState(() => localStorage.getItem('sidebar') !== '0')
+  const [sideW, setSideW] = useState(() => Number(localStorage.getItem('sideW')) || SIDE_DEFAULT)
+  const [resizing, setResizing] = useState(false)
+  useEffect(() => { localStorage.setItem('sidebar', sidebar ? '1' : '0') }, [sidebar])
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => { if (e.metaKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b') { e.preventDefault(); setSidebar((v) => !v) } }
+    window.addEventListener('keydown', key)
+    return () => window.removeEventListener('keydown', key)
+  }, [])
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault(); setResizing(true)
+    let w = sideW
+    const move = (ev: MouseEvent) => { w = Math.min(SIDE_MAX, Math.max(SIDE_MIN, ev.clientX)); setSideW(w); if (ev.clientX < SIDE_MIN - 80) { setSidebar(false); up() } }
+    const up = () => { setResizing(false); localStorage.setItem('sideW', String(w)); window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up) }
+    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up)
+  }
+  const [queues, setQueues] = useState<Record<string, Queued[]>>({})
+  const [restore, setRestore] = useState({ text: '', n: 0 })
+  const queuesRef = useRef(queues)
+  queuesRef.current = queues
   const currentRef = useRef<SessionRow | null>(null)
   const itemsRef = useRef<Item[]>([])
   const scroller = useRef<HTMLDivElement>(null)
@@ -72,7 +95,20 @@ export function App() {
     return window.desk.onPush((p: PushEvent) => {
       if (p.type === 'sessions') { applyListing(p); return }
       if (p.type === 'busy') setBusyIds((prev) => { const n = new Set(prev); p.busy ? n.add(p.sessionId) : n.delete(p.sessionId); return n })
-      if (p.sessionId !== currentRef.current?.id) return
+      const mine = p.sessionId === currentRef.current?.id
+      if (p.type === 'agent' && (p.event.kind === 'user_input' || p.event.kind === 'queue_cleared')) {
+        const ids = p.event.kind === 'user_input' ? [p.event.qid] : p.event.qids
+        const q = queuesRef.current[p.sessionId] ?? []
+        const hit = q.filter((x) => ids.includes(x.qid))
+        if (!hit.length) return
+        queuesRef.current = { ...queuesRef.current, [p.sessionId]: q.filter((x) => !ids.includes(x.qid)) }
+        setQueues(queuesRef.current)
+        if (!mine) return
+        if (p.event.kind === 'user_input') { stick.current = true; setItems((prev) => [...prev, ...hit.map((x) => userItem(x.text, x.attachments))]) }
+        else setRestore((r) => ({ text: hit.map((x) => x.text).filter(Boolean).join('\n\n'), n: r.n + 1 }))
+        return
+      }
+      if (!mine) return
       if (p.type === 'tokens') { setTokens(p.tokens); return }
       if (p.type === 'compacted') { setItems((prev) => insertBeforeTurn(prev, p.item as unknown as Item, p.beforeTurn)); return }
       if (p.type === 'agent') setItems((prev) => applyEvent(prev, p.event))
@@ -118,10 +154,29 @@ export function App() {
       setCurrent(s); currentRef.current = s
     }
     stick.current = true
-    setItems((prev) => [...prev, atts.length ? { t: 'user', text, attachments: atts.map((a) => a.meta) } : { t: 'user', text }])
-    setBusy(true)
-    await window.desk.send(s.id, text, atts.map((a) => a.att!))
+    const metas = atts.length ? atts.map((a) => a.meta) : undefined
+    const qid = crypto.randomUUID()
+    if (busy && current) {
+      // Copilot-style: queue it; it joins this conversation before the agent's next model call
+      queuesRef.current = { ...queuesRef.current, [s.id]: [...(queuesRef.current[s.id] ?? []), { qid, text, attachments: metas }] }
+      setQueues(queuesRef.current)
+    } else {
+      setItems((prev) => [...prev, userItem(text, metas)])
+      setBusy(true)
+    }
+    await window.desk.send(s.id, text, atts.map((a) => a.att!), qid)
   }
+  const unqueue = async (q: Queued) => {
+    if (!current) return
+    const sid = current.id
+    const removed = await window.desk.unqueue(sid, q.qid)
+    // if it already reached the model, its user_input event moves it into the thread; otherwise drop the chip
+    if (!(queuesRef.current[sid] ?? []).some((x) => x.qid === q.qid)) return
+    queuesRef.current = { ...queuesRef.current, [sid]: (queuesRef.current[sid] ?? []).filter((x) => x.qid !== q.qid) }
+    setQueues(queuesRef.current)
+    if (removed) setRestore((r) => ({ text: q.text, n: r.n + 1 }))
+  }
+  const queued = current ? queues[current.id] ?? [] : []
 
   const fork = async (turn: number) => {
     if (!current) return
@@ -181,7 +236,7 @@ export function App() {
   const parent = current?.parent_id ? sessions.find((s) => s.id === current.parent_id) : null
 
   const composer = (
-    <Composer busy={busy} model={model} models={models} cwd={cwd} onModel={setModel}
+    <Composer busy={busy} restore={restore} model={model} models={models} cwd={cwd} onModel={setModel}
       onPickFolder={current ? undefined : () => setFolderMenu(!folderMenu)} onSend={send} onStop={() => current && window.desk.stop(current.id)} autoFocus
       effort={effort} onEffort={setEffort} memories={memories} onAddMemory={addMemory} onRemoveMemory={(m) => setMemories(memories.filter((x) => x !== m))}
       onShare={current && !busy ? async () => { await persistCurrent(); setSharing(current) } : undefined}
@@ -189,16 +244,17 @@ export function App() {
   )
 
   return (
-    <div className={`app ${sidebar ? '' : 'nosidebar'}`}>
-      {sidebar && (
+    <div className={`app ${sidebar ? '' : 'nosidebar'}${resizing ? ' resizing' : ''}`} style={{ gridTemplateColumns: `${sidebar ? sideW : 0}px minmax(0, 1fr)` }}>
+      <div className="side-slot" aria-hidden={!sidebar} inert={!sidebar || undefined}>
         <Sidebar folders={folders} sessions={sessions} bookmarks={bookmarks} onCompact={openCompact} currentId={current?.id ?? null} busyIds={busyIds}
           onOpen={open} onNewChat={newChat} onDelete={del} onAddFolder={addFolder} onRemoveFolder={removeFolder}
           onCollapse={() => setSidebar(false)} onSettings={() => setShowSettings(true)}
           onShare={async (s) => { await persistCurrent(); setSharing(s) }} />
-      )}
+      </div>
+      {sidebar && <div className="side-resize" style={{ left: sideW - 3 }} onMouseDown={startResize}
+        onDoubleClick={() => { setSideW(SIDE_DEFAULT); localStorage.setItem('sideW', String(SIDE_DEFAULT)) }} title="Drag to resize · double-click to reset" />}
 
       <main className="main">
-        {!sidebar && <button className="icon float-toggle" onClick={() => setSidebar(true)}>◧</button>}
         <div className="drag" />
         {current && (
           <div className="header">
@@ -208,6 +264,8 @@ export function App() {
             {current.parent_id && current.fork_turn !== null && <span className="fork-badge">⑂ forked at turn {current.fork_turn + 1}</span>}
           </div>
         )}
+        {/* after the drag strip and header: Electron resolves drag regions in DOM order, so it must come last to stay clickable */}
+        {!sidebar && <button className="icon float-toggle" onClick={() => setSidebar(true)} title="Show sidebar (⌘B)">◧</button>}
         {!current && items.length === 0 ? (
           <div className="empty">
             {BRAND.logo ? <div className="logo brand-logo"><img src={BRAND.logo} alt="" /><span>{BRAND.short}</span></div> : <div className="logo">◆</div>}
@@ -246,6 +304,18 @@ export function App() {
                 <div className="compact-banner">
                   This chat is long (~{Math.round(tokens / 1000)}k tokens).{compactCfg.mode === 'auto' ? ' It will be auto-compacted before your next message, or' : ''} Compact it to keep the agent focused and fast.
                   <button onClick={() => current && openCompact(current)}>Choose turns…</button>
+                </div>
+              )}
+              {queued.length > 0 && (
+                <div className="queue">
+                  {queued.map((q, i) => (
+                    <div key={q.qid} className="queued" title="Queued: joins the conversation at the agent's next step">
+                      <span className="q-badge">{i === 0 ? 'Next' : `+${i}`}</span>
+                      <span className="q-text">{q.text || q.attachments?.map((a) => a.name).join(', ')}</span>
+                      {q.attachments?.length ? <span className="muted">📎 {q.attachments.length}</span> : null}
+                      <button onClick={() => unqueue(q)} title="Remove from the queue and put it back in the box">×</button>
+                    </div>
+                  ))}
                 </div>
               )}
               {bg.length > 0 && <div className="tray">{bg.map((a) => <span key={a.agentId} className="chip"><span className="spinner" /> {a.name} · {a.agentId}</span>)}</div>}

@@ -17,6 +17,8 @@ export interface LoopOptions {
   reasoning?: 'off' | 'low' | 'medium' | 'high'
   /** Returns pending notifications to inject before the next model call. */
   drainNotifications?: () => string[]
+  /** Returns user prompts queued while working, injected before the next model call. */
+  drainInput?: () => Message[]
 }
 
 export class AbortedError extends Error { constructor() { super('cancelled') } }
@@ -81,6 +83,7 @@ export async function runLoop(o: LoopOptions, messages: Message[]): Promise<stri
     if (o.signal.aborted) throw new AbortedError()
     const notes = o.drainNotifications?.() ?? []
     if (notes.length) messages.push({ role: 'user', content: notes.map((n) => `<system_notification>${n}</system_notification>`).join('\n') })
+    messages.push(...(o.drainInput?.() ?? []))
     const msg = await callModel(o, messages)
     messages.push(msg)
     o.hooks.onEvent({ kind: 'assistant_done', agentId: o.agentId, message: msg })

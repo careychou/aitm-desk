@@ -33,6 +33,7 @@ On first launch open **⚙ Settings** and set your model endpoint's **Base URL**
 - **Approvals** — shell commands and file writes ask first: *allow once*, *allow for this chat*, or *deny*.
 - **Sub-agents** — the `task` tool runs a sub-agent with fresh context. Several `task` calls in one turn run **in parallel**; `mode: "background"` returns immediately and the result is fetched later with `read_agent` (the main agent is woken when it finishes). Nested delegation is capped at depth 2; Stop cancels the whole tree.
 - **Model thinking** — a Copilot-style *Thinking → Thought* block streams the model's reasoning and collapses to a one-line peek. Per-chat effort: 💭 off / low / medium / high. Reads `reasoning_content` / `reasoning`, inline `<think>` tags, and Gemini thought parts.
+- **Queue follow-ups while it works** — keep typing while the agent runs, the way Copilot does. A queued prompt shows above the box (× to pull it back) and joins **the same conversation** at the agent's next step, after the current tool results and before its next model call, so the agent changes course mid-task. No second agent is started. If the agent has already answered, the queued prompt starts the next turn. *Stop* cancels the run, including any pending approval, and puts queued text back in the box.
 
 ### Skills & agents (Copilot-compatible)
 - **Skills**: `skills/<name>/SKILL.md` with YAML front-matter (`name`, `description`). Only names + descriptions go into the prompt; the model loads a skill's full body on demand with the `skill` tool.
@@ -45,6 +46,7 @@ On first launch open **⚙ Settings** and set your model endpoint's **Base URL**
 - **Drag & drop** — drag chats to reorder them (within the same folder/level), drag a chat onto **Bookmarks** or a bookmark folder to pin it, and drag pins/folders to reorder or nest them.
 - **Rename & delete** — double-click to rename, or use the ⋯ menu / right-click.
 - **Bookmarks** — a pinned section at the top of the sidebar with nestable folders.
+- **Resizable sidebar** — drag its edge to resize (double-click resets), drag it past the minimum width or press **⌘B** to hide it, and use ◧ or ⌘B to show it again. The width and the hidden/shown state are remembered.
 
 ### Attachments
 - **Paste, drop or 📎** — paste screenshots/files (⌘V), drag files anywhere onto the window, or pick them with 📎. Chips show the size before → after and estimated tokens.

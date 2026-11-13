@@ -24,7 +24,8 @@ let win: BrowserWindow | null = null
 let store: Store
 let settings: Settings
 const live = new Map<string, Session>()
-const pending = new Map<string, (v: any) => void>()
+// open permission/ask prompts; Stop resolves a session's prompts with `cancel` so the run can unwind
+const pending = new Map<string, { sid: string; resolve: (v: any) => void; cancel: unknown }>()
 
 const push = (e: PushEvent) => win?.webContents.send('push', e)
 const listing = () => ({ sessions: store.listSessions(), folders: store.listFolders(), bookmarks: store.listBookmarks() })
@@ -51,12 +52,12 @@ function getLive(id: string): Session {
       onEvent: (event) => push({ type: 'agent', sessionId: id, event }),
       requestPermission: (r) => new Promise<PermissionDecision>((resolve) => {
         const requestId = randomUUID()
-        pending.set(requestId, resolve)
+        pending.set(requestId, { sid: id, resolve, cancel: 'deny' })
         push({ type: 'permission', sessionId: id, requestId, ...r })
       }),
       askUser: (r) => new Promise<string>((resolve) => {
         const requestId = randomUUID()
-        pending.set(requestId, resolve)
+        pending.set(requestId, { sid: id, resolve, cancel: '' })
         push({ type: 'ask', sessionId: id, requestId, ...r })
       })
     }
@@ -94,8 +95,8 @@ async function compactSession(id: string, plan: CompactPlan, auto = false) {
   return r
 }
 
-async function run(id: string, s: Session, prompt?: string, atts: Attachment[] = []) {
-  if (s.isBusy) return
+async function run(id: string, s: Session, prompt?: string, atts: Attachment[] = [], qid?: string) {
+  if (s.isBusy) { if (prompt || atts.length) void s.send(prompt, atts, qid); return }
   push({ type: 'busy', sessionId: id, busy: true })
   try {
     if ((prompt || atts.length) && settings.autoCompact === 'auto' && s.tokenEstimate > settings.compactThreshold) {
@@ -105,7 +106,7 @@ async function run(id: string, s: Session, prompt?: string, atts: Attachment[] =
         catch (e: any) { push({ type: 'agent', sessionId: id, event: { kind: 'error', agentId: 'main', message: `Auto-compact failed: ${e.message}` } }) }
       }
     }
-    await s.send(prompt, atts)
+    await s.send(prompt, atts, qid)
   } finally {
     store.saveMessages(id, s.messages.slice(1))
     store.updateSession(id, {})
@@ -159,18 +160,22 @@ function registerIpc() {
     return row
   })
   ipcMain.handle('deleteSession', (_e, id: string) => { live.get(id)?.stop(); live.delete(id); store.deleteSession(id); pushSessions() })
-  ipcMain.handle('send', (_e, id: string, prompt: string, atts: Attachment[] = []) => {
+  ipcMain.handle('send', (_e, id: string, prompt: string, atts: Attachment[] = [], qid?: string) => {
     const row = store.getSession(id)
     const title = prompt.trim() || atts.map((a) => a.name).join(', ')
     if (row && row.title === 'New chat' && title) store.updateSession(id, { title: title.replace(/\s+/g, ' ').slice(0, 60) })
-    void run(id, getLive(id), prompt, atts)
+    void run(id, getLive(id), prompt, atts, qid)
   })
+  ipcMain.handle('unqueue', (_e, id: string, qid: string) => live.get(id)?.unqueue(qid) ?? false)
   ipcMain.handle('prepareAttachments', (_e, inputs: AttachInput[]) => prepare(inputs))
   ipcMain.handle('pickAttachments', async () => {
     const r = await dialog.showOpenDialog(win!, { properties: ['openFile', 'multiSelections'], message: 'Attach files: images, PDF, Office, text or code' })
     return r.canceled ? [] : prepare(r.filePaths.map((p) => ({ path: p })))
   })
-  ipcMain.handle('stop', (_e, id: string) => live.get(id)?.stop())
+  ipcMain.handle('stop', (_e, id: string) => {
+    live.get(id)?.stop()
+    for (const [rid, p] of pending) if (p.sid === id) { pending.delete(rid); p.resolve(p.cancel) }
+  })
   ipcMain.handle('saveItems', (_e, id: string, items: unknown[]) => store.saveUiItems(id, items))
   ipcMain.handle('setModel', (_e, id: string, model: string) => { store.updateSession(id, { model }); live.get(id)?.setModel(model); settings.defaultModel = model; saveSettings(settings) })
   ipcMain.handle('renameSession', (_e, id: string, title: string) => { if (title.trim()) { store.updateSession(id, { title: title.trim().slice(0, 120) }); pushSessions() } })
@@ -219,8 +224,8 @@ function registerIpc() {
   ipcMain.handle('copyText', (_e, t: string) => clipboard.writeText(t))
   ipcMain.handle('revealFile', (_e, p: string) => eshell.showItemInFolder(p))
   ipcMain.handle('loadItems', (_e, id: string) => store.loadUiItems(id))
-  ipcMain.handle('respondPermission', (_e, rid: string, d: PermissionDecision) => { pending.get(rid)?.(d); pending.delete(rid) })
-  ipcMain.handle('respondAsk', (_e, rid: string, a: string) => { pending.get(rid)?.(a); pending.delete(rid) })
+  ipcMain.handle('respondPermission', (_e, rid: string, d: PermissionDecision) => { pending.get(rid)?.resolve(d); pending.delete(rid) })
+  ipcMain.handle('respondAsk', (_e, rid: string, a: string) => { pending.get(rid)?.resolve(a); pending.delete(rid) })
   ipcMain.handle('listModels', async () => {
     try { return { models: await adapter().listModels() } } catch (e: any) { return { models: [], error: e.message } }
   })

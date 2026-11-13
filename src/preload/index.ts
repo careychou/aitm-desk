@@ -28,6 +28,7 @@ const api: DeskApi = {
   loadItems: inv('loadItems') as any,
   deleteSession: inv('deleteSession') as any,
   send: inv('send') as any,
+  unqueue: inv('unqueue') as any,
   prepareAttachments: inv('prepareAttachments') as any,
   pickAttachments: inv('pickAttachments') as any,
   pathForFile: (f: File) => { try { return webUtils.getPathForFile(f) } catch { return '' } },

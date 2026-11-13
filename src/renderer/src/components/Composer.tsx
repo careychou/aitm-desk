@@ -5,6 +5,8 @@ type Chip = PreparedAttachment & { pending?: boolean }
 
 interface Props {
   busy: boolean
+  /** Text to put back in the box (e.g. queued prompts dropped by Stop); `n` changes on every restore. */
+  restore?: { text: string; n: number }
   model: string
   models: string[]
   cwd: string
@@ -38,6 +40,10 @@ export function Composer(p: Props) {
     const el = ta.current
     if (el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 260) + 'px' }
   }, [text])
+
+  useEffect(() => {
+    if (p.restore?.n && p.restore.text) setText((t) => (t.trim() ? `${p.restore!.text}\n\n${t}` : p.restore!.text))
+  }, [p.restore?.n])
 
   const [atts, setAtts] = useState<Chip[]>([])
   const [dragging, setDragging] = useState(false)
@@ -75,7 +81,7 @@ export function Composer(p: Props) {
   })
 
   const submit = () => {
-    if ((!text.trim() && !ready.length) || p.busy || preparing) return
+    if ((!text.trim() && !ready.length) || preparing) return
     p.onSend(text.trim(), ready)
     setText(''); setAtts([])
   }
@@ -98,7 +104,7 @@ export function Composer(p: Props) {
         <textarea
           ref={ta}
           rows={1}
-          placeholder="Ask anything, or describe a task…"
+          placeholder={p.busy ? 'Queue a follow-up: it joins at the agent\'s next step (Enter)' : 'Ask anything, or describe a task…'}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onPaste={(e) => {
@@ -115,9 +121,11 @@ export function Composer(p: Props) {
             {(p.models.includes(p.model) ? p.models : [p.model, ...p.models]).map((m) => <option key={m} value={m}>{short(m)}</option>)}
           </select>
           <div className="spacer" />
-          {p.busy
-            ? <button className="send stop" onClick={p.onStop} title="Stop">■</button>
-            : <button className="send" onClick={submit} disabled={(!text.trim() && !ready.length) || preparing} title={preparing ? 'Preparing attachments…' : 'Send'}>↑</button>}
+          {p.busy && <button className="send stop" onClick={p.onStop} title="Stop (queued prompts go back in the box)">■</button>}
+          {(!p.busy || text.trim() || ready.length > 0) && (
+            <button className="send" onClick={submit} disabled={(!text.trim() && !ready.length) || preparing}
+              title={preparing ? 'Preparing attachments…' : p.busy ? 'Queue: joins the conversation at the next step' : 'Send'}>↑</button>
+          )}
         </div>
       </div>
       <div className="folder">

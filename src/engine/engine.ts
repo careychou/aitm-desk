@@ -32,6 +32,7 @@ export class Session {
   readonly manager: AgentManager
   readonly messages: Message[]
   private busy = false
+  private queue: Array<{ qid?: string; content: Message['content'] }> = []
 
   constructor(private o: SessionOptions) {
     this.registry = loadRegistry({ cwd: o.cwd, home: o.home })
@@ -55,26 +56,38 @@ export class Session {
   /** Replaces attached memories; takes effect on the next model call. */
   setMemories(paths: string[]) { this.o.memories = paths; this.messages[0] = { role: 'system', content: buildMainSystem(this.registry, this.o.cwd, paths) } }
 
-  /** Sends a user prompt (or, with no prompt, just delivers pending notifications) and runs the main loop. */
-  async send(prompt?: string, attachments: Attachment[] = []): Promise<{ status: 'completed' | 'failed' | 'cancelled'; text: string }> {
-    if (this.busy) throw new Error('session is busy')
+  /** Prompts waiting to be added to the conversation. */
+  get queued() { return this.queue.map((q) => q.qid) }
+
+  /**
+   * Sends a user prompt (or, with no prompt, just delivers pending notifications) and runs the main loop.
+   * While a run is in progress the prompt is queued instead: it joins the same conversation before the
+   * next model call (after the current tool results), or starts the next run if the agent has just answered.
+   */
+  async send(prompt?: string, attachments: Attachment[] = [], qid?: string): Promise<{ status: 'completed' | 'failed' | 'cancelled' | 'queued'; text: string }> {
+    if (prompt || attachments.length) this.queue.push({ qid, content: buildUserContent(prompt ?? '', attachments) as Message['content'] })
+    if (this.busy) return { status: 'queued', text: '' }
     this.busy = true
     const controller = this.manager.registerMain(MAIN_ID)
-    if (prompt || attachments.length) this.messages.push({ role: 'user', content: buildUserContent(prompt ?? '', attachments) })
     let status: 'completed' | 'failed' | 'cancelled' = 'completed'
     let text = ''
     try {
-      text = await runLoop({
-        agentId: MAIN_ID, model: this.o.model, adapter: this.o.adapter, sem: this.manager.sem, hooks: this.o.hooks,
-        tools: selectTools(undefined, 0), signal: controller.signal, maxTurns: this.o.maxTurnsMain ?? 50, reasoning: this.o.reasoning ?? 'medium',
-        ctx: { cwd: this.o.cwd, depth: 0, hooks: this.o.hooks, gate: this.manager.gate, registry: this.registry, agents: this.manager },
-        drainNotifications: () => this.manager.drain(MAIN_ID)
-      }, this.messages)
+      do {
+        text = await runLoop({
+          agentId: MAIN_ID, model: this.o.model, adapter: this.o.adapter, sem: this.manager.sem, hooks: this.o.hooks,
+          tools: selectTools(undefined, 0), signal: controller.signal, maxTurns: this.o.maxTurnsMain ?? 50, reasoning: this.o.reasoning ?? 'medium',
+          ctx: { cwd: this.o.cwd, depth: 0, hooks: this.o.hooks, gate: this.manager.gate, registry: this.registry, agents: this.manager },
+          drainNotifications: () => this.manager.drain(MAIN_ID),
+          drainInput: () => this.drainQueue()
+        }, this.messages)
+      } while (this.queue.length)
     } catch (e: any) {
       status = e instanceof AbortedError || controller.signal.aborted ? 'cancelled' : 'failed'
       text = status === 'cancelled' ? 'cancelled' : (e?.message ?? String(e))
       if (status === 'failed') this.o.hooks.onEvent({ kind: 'error', agentId: MAIN_ID, message: text })
       this.repairHistory()
+      const dropped = this.queue.splice(0).flatMap((q) => (q.qid ? [q.qid] : []))
+      if (dropped.length) this.o.hooks.onEvent({ kind: 'queue_cleared', agentId: MAIN_ID, qids: dropped })
     } finally {
       this.busy = false
       this.manager.finishMain(MAIN_ID, status, text)
@@ -82,6 +95,20 @@ export class Session {
     }
     if (this.manager.hasPendingNotifications(MAIN_ID)) queueMicrotask(() => this.onIdleNotification?.())
     return { status, text }
+  }
+
+  /** Removes a queued prompt before it reaches the model. Returns false if it was already sent. */
+  unqueue(qid: string) {
+    const i = this.queue.findIndex((q) => q.qid === qid)
+    if (i >= 0) this.queue.splice(i, 1)
+    return i >= 0
+  }
+
+  private drainQueue(): Message[] {
+    return this.queue.splice(0).map((q) => {
+      if (q.qid) this.o.hooks.onEvent({ kind: 'user_input', agentId: MAIN_ID, qid: q.qid })
+      return { role: 'user', content: q.content } as Message
+    })
   }
 
   /** After an interruption, make sure every assistant tool_call has a matching tool result. */

@@ -49,7 +49,10 @@ export interface DeskApi {
   revealFile(path: string): Promise<void>
   loadItems(sessionId: string): Promise<unknown[]>
   deleteSession(id: string): Promise<void>
-  send(sessionId: string, prompt: string, attachments?: Attachment[]): Promise<void>
+  /** Sends a prompt. While the chat is working it is queued under `qid` and joins at the next step. */
+  send(sessionId: string, prompt: string, attachments?: Attachment[], qid?: string): Promise<void>
+  /** Withdraws a queued prompt; false if it already reached the model. */
+  unqueue(sessionId: string, qid: string): Promise<boolean>
   prepareAttachments(inputs: AttachInput[]): Promise<PreparedAttachment[]>
   pickAttachments(): Promise<PreparedAttachment[]>
   /** Absolute path of a dropped/pasted File ('' when it has none, e.g. a screenshot). */
