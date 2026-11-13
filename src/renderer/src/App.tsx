@@ -9,6 +9,7 @@ import { CompactModal } from './components/CompactModal'
 import { AskCard, PermissionCard, type AskReq, type PermissionReq } from './components/Prompts'
 import { SettingsModal } from './components/SettingsModal'
 import { Sidebar } from './components/Sidebar'
+import { BRAND } from '../../shared/brand'
 
 const SUGGESTIONS = [
   'List the skills available in this folder and what each family is for.',
@@ -209,7 +210,7 @@ export function App() {
         )}
         {!current && items.length === 0 ? (
           <div className="empty">
-            <div className="logo">◆</div>
+            {BRAND.logo ? <div className="logo brand-logo"><img src={BRAND.logo} alt="" /><span>{BRAND.short}</span></div> : <div className="logo">◆</div>}
             <div className="wide composer-anchor">
               {composer}
               {folderMenu && (
@@ -228,7 +229,7 @@ export function App() {
             <div className="suggestions wide">
               {SUGGESTIONS.map((s) => <button key={s} onClick={() => send(s)}>{s}</button>)}
             </div>
-            <div className="foot">AITM Desk uses AI. Check for mistakes.</div>
+            <div className="foot">{BRAND.name} uses AI. Check for mistakes.</div>
           </div>
         ) : (
           <>

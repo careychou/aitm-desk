@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import type { BookmarkRow, FolderRow, SessionRow } from '../../../shared/api'
 import { buildTree, isWithin, type TreeNode } from '../../../shared/fork'
 import { Menu, at, type MenuEntry, type MenuState } from './Menu'
+import { BRAND } from '../../../shared/brand'
 
 interface Props {
   folders: FolderRow[]
@@ -265,7 +266,7 @@ export function Sidebar(p: Props) {
         <button className="add-folder" onClick={p.onAddFolder}>＋ Add working folder</button>
       </div>
       <div className="side-bottom">
-        <span className="brand">AITM Desk</span>
+        <span className="brand">{BRAND.logo && <img src={BRAND.logo} alt="" />}{BRAND.short}</span>
         <button className="icon" title="Settings" onClick={p.onSettings}>⚙</button>
       </div>
       {menu && <Menu menu={menu} onClose={() => setMenu(null)} />}

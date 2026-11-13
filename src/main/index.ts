@@ -10,6 +10,7 @@ import { Session } from '../engine/engine'
 import { loadRegistry } from '../engine/registry/registry'
 import type { Message, PermissionDecision } from '../engine/types'
 import type { CompactItem, PushEvent } from '../shared/api'
+import { BRAND } from '../shared/brand'
 import { insertBeforeTurn, liveTurnMap, orderRows, reorderIds, sliceItemsAtTurn, sliceMessagesAtTurn } from '../shared/fork'
 import { estimateTokens, keepLastPlan, splitHistoryTurns, type CompactPlan } from '../engine/compact'
 
@@ -28,7 +29,7 @@ const pushSessions = () => push({ type: 'sessions', ...listing() })
 type Effort = Settings['reasoning']
 const effortOf = (row: { reasoning?: string | null }): Effort => (row.reasoning as Effort) || settings.reasoning
 const memoriesOf = (row: { memories?: string | null }): string[] => { try { return JSON.parse(row.memories || '[]') } catch { return [] } }
-const sharesDir = () => path.join(app.getPath('documents'), 'AITM Desk', 'shares')
+const sharesDir = () => path.join(app.getPath('documents'), BRAND.name, 'shares')
 const adapter = () => new OpenAIAdapter({ baseUrl: settings.baseUrl, apiKey: settings.apiKey })
 
 function getLive(id: string): Session {
@@ -241,8 +242,11 @@ function createWindow() {
   else void win.loadFile(path.join(__dirname, '../renderer/index.html'))
 }
 
+// Pin the data folder so a rename of the product keeps existing chats.
+app.setPath('userData', path.join(app.getPath('appData'), BRAND.dataDir))
+
 app.whenReady().then(() => {
-  app.setName('AITM Desk')
+  app.setName(BRAND.name)
   settings = loadSettings()
   store = new Store(app.getPath('userData'))
   registerIpc()
