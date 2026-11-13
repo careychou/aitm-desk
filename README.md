@@ -14,8 +14,8 @@ Grab the latest build from **[Releases](https://github.com/careychou/aitm-desk/r
 
 | File | What |
 |---|---|
-| `AITM-Desk-<version>-arm64.dmg` | Installer for Apple Silicon Macs (drag to Applications) |
-| `AITM-Desk-<version>-arm64.zip` | Same app, zipped |
+| `aitm-desk-<version>-arm64.dmg` | Installer for Apple Silicon Macs (drag to Applications) |
+| `aitm-desk-<version>-arm64.zip` | Same app, zipped |
 
 > **The app is not code-signed.** macOS will say it "is damaged" or "can't be opened". After copying it to Applications, run once:
 > ```bash
