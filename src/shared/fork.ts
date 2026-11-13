@@ -30,6 +30,18 @@ export function insertBeforeTurn<T extends { t: string }>(items: T[], item: T, t
   return [...items, item]
 }
 
+/**
+ * UI turn index (0-based, as shown in the chat) for each of the `count` turns still in the live history.
+ * `map` is stored after compactions (kept turns may be non-contiguous); turns added later continue after its last entry.
+ * `offset` is the legacy form (all turns before it were compacted).
+ */
+export function liveTurnMap(count: number, map: number[] | null, offset = 0): number[] {
+  const m = map ?? []
+  const out: number[] = []
+  for (let i = 0; i < count; i++) out.push(i < m.length ? m[i] : m.length ? m[m.length - 1] + (i - m.length + 1) : i + offset)
+  return out
+}
+
 export interface Orderable { sort_order?: number | null; updated_at?: number }
 
 /** Display order: rows never arranged by the user (null sort_order) first, newest first; then manual order. */

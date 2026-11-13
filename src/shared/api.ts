@@ -4,9 +4,9 @@ import type { Settings } from '../main/settings'
 
 export type { AgentEvent, SessionRow, FolderRow, BookmarkRow, Settings, PermissionDecision }
 export interface Listing { sessions: SessionRow[]; folders: FolderRow[]; bookmarks: BookmarkRow[] }
-export interface CompactItem { t: 'compact'; auto: boolean; summarized: number; dropped: number; before: number; after: number; summary: string }
+export interface CompactItem { t: 'compact'; auto: boolean; summarized: number; dropped: number; before: number; after: number; summary: string; keptTurns?: number[]; summarizedTurns?: number[]; droppedTurns?: number[] }
 export interface TurnInfo { index: number; user: string; answer: string; tools: string[]; tokens: number }
-export interface TurnAnalysis { turns: TurnInfo[]; clusters: Array<{ label: string; reason?: string; turns: number[] }>; method: 'model' | 'lexical'; hasPriorSummary: boolean; tokens: number; uiOffset: number }
+export interface TurnAnalysis { turns: TurnInfo[]; clusters: Array<{ label: string; reason?: string; turns: number[] }>; method: 'model' | 'lexical'; hasPriorSummary: boolean; tokens: number; uiTurns: number[] }
 
 /** Messages pushed from main to renderer. */
 export type PushEvent =
@@ -34,7 +34,7 @@ export interface DeskApi {
   updateBookmark(id: string, patch: { name?: string; parent_id?: string | null; collapsed?: number }): Promise<void>
   removeBookmark(id: string): Promise<void>
   analyzeTurns(id: string): Promise<TurnAnalysis>
-  compact(id: string, plan: { summarize: number[]; keepRecent: number }): Promise<{ before: number; after: number; summarized: number; dropped: number }>
+  compact(id: string, plan: { keep: number[]; summarize: number[] }): Promise<{ before: number; after: number; summarized: number; dropped: number }>
   createSession(opts: { cwd: string; model: string; reasoning?: Settings['reasoning']; memories?: string[] }): Promise<SessionRow>
   setReasoning(sessionId: string, r: Settings['reasoning']): Promise<void>
   setMemories(sessionId: string, paths: string[]): Promise<void>

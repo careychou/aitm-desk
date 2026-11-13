@@ -49,7 +49,7 @@ On first launch open **⚙ Settings** and set your model endpoint's **Base URL**
 ### Memory & context
 - **Share a session** — export **all turns or selected turns** to Markdown (optionally with tool calls and thinking), save to a file or copy to clipboard.
 - **Attach exports as memory** — *＋ Memory* attaches one or more exported `.md` files to a chat; the agent starts with them as prior context. Great for handing work between sessions or people.
-- **Smart compaction** — *⇲ Compact* (which also shows the estimated context size) groups earlier turns into **related-topic clusters** — even non-adjacent ones when a long chat pivoted and came back. Tick whole clusters or single turns to **summarize**; unticked turns are **dropped** from the model's context; the last N turns stay verbatim. Long chats can be flagged or auto-compacted past a token threshold (Settings → *Long chats*).
+- **Smart compaction**: *⇲ Compact* (which also shows the estimated context size) has two modes. **Keep the last N turns** word-for-word and summarize everything before them, or **Choose turns** and set each turn to **Keep · Summarize · Drop**. You can set a turn singly, or set a whole **related-topic cluster** at once (clusters can be non-adjacent when a long chat pivoted and came back). Kept turns can be anywhere in the chat, so an important early instruction stays verbatim. Forks made after a compaction still line up with the right turns. Long chats can be flagged or auto-compacted past a token threshold (Settings → *Long chats*).
 
 ### Under the hood
 - Electron + React UI over a **headless TypeScript engine** (also usable from a CLI).

@@ -36,7 +36,7 @@ describe('buildTree', () => {
   })
 })
 
-import { orderRows, reorderIds, isWithin, insertBeforeTurn } from '../src/shared/fork'
+import { orderRows, reorderIds, isWithin, insertBeforeTurn, liveTurnMap } from '../src/shared/fork'
 describe('ordering', () => {
   const rows = [{ id: 'a', updated_at: 1, sort_order: null }, { id: 'b', updated_at: 3, sort_order: null }, { id: 'c', updated_at: 9, sort_order: 0 }, { id: 'd', updated_at: 2, sort_order: 1 }]
   it('puts un-arranged rows first (newest first) then manual order', () => {
@@ -58,5 +58,14 @@ describe('ordering', () => {
   it('inserts an item before a given UI turn', () => {
     const items = [{ t: 'user' }, { t: 'assistant' }, { t: 'user' }, { t: 'assistant' }]
     expect(insertBeforeTurn(items, { t: 'x' }, 1).map((i) => i.t)).toEqual(['user', 'assistant', 'x', 'user', 'assistant'])
+  })
+})
+
+describe('live turn map', () => {
+  it('maps live turns to UI turns, extending past the stored map', () => {
+    expect(liveTurnMap(3, null)).toEqual([0, 1, 2])
+    expect(liveTurnMap(3, null, 4)).toEqual([4, 5, 6])
+    expect(liveTurnMap(4, [1, 4], 0)).toEqual([1, 4, 5, 6])
+    expect(liveTurnMap(1, [], 0)).toEqual([0])
   })
 })

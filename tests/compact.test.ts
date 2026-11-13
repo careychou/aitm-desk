@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { applyCompaction, clusterLexical, normalizeClusters, planTurns, priorSummary, splitHistoryTurns, clusterTurns } from '../src/engine/compact'
+import { applyCompaction, clusterLexical, keepLastPlan, normalizeClusters, planTurns, priorSummary, splitHistoryTurns, clusterTurns } from '../src/engine/compact'
 import { Session } from '../src/engine/engine'
 import { COMPACT_TAG, sliceMessagesAtTurn } from '../src/shared/fork'
 import type { ChatRequest, Delta, Message, ModelAdapter } from '../src/engine/types'
@@ -51,10 +51,11 @@ describe('compaction', () => {
 
   it('applies a plan: summary head, recent turns verbatim, chained summaries, forks count real turns', () => {
     const t = splitHistoryTurns(hist)
-    const p = planTurns(t, { summarize: [0, 2], keepRecent: 1 })
+    expect(keepLastPlan(4, 1)).toEqual({ keep: [3], summarize: [0, 1, 2] })
+    const p = planTurns(t, { keep: [3], summarize: [0, 2, 3] })
     expect(p.summarized.map((x) => x.index)).toEqual([0, 2])
     expect(p.dropped.map((x) => x.index)).toEqual([1])
-    const next = applyCompaction(hist, 'SUMMARY', 1)
+    const next = applyCompaction(hist, 'SUMMARY', [3])
     expect((next[0].content as string).startsWith(COMPACT_TAG)).toBe(true)
     expect(next.slice(2)).toEqual(turn('what is next', 'next steps'))
     expect(priorSummary(next)).toContain('SUMMARY')
@@ -66,10 +67,16 @@ describe('compaction', () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cmp-'))
     const fake = new Fake((r) => `SUM(${(r.messages[1].content as string).includes('poem') ? 'poem' : 'nopoem'})`)
     const s = new Session({ adapter: fake, cwd, model: 'm', home: path.join(cwd, 'h'), history: hist, hooks: { onEvent() {}, requestPermission: async () => 'allow', askUser: async () => '' } })
-    const r = await s.compact({ summarize: [0, 2], keepRecent: 1 })
-    expect(r).toMatchObject({ summarized: 2, dropped: 1, summary: 'SUM(nopoem)' })
+    const r = await s.compact({ keep: [3], summarize: [0, 2] })
+    expect(r).toMatchObject({ summarized: 2, dropped: 1, summary: 'SUM(nopoem)', kept: [3], compacted: [0, 2, 1] })
     expect(r.after).toBeLessThan(r.before)
     expect(s.history).toHaveLength(4)
     expect(s.messages[0].role).toBe('system')
+  })
+
+  it('keeps arbitrary (non-recent) turns verbatim in original order', async () => {
+    const next = applyCompaction(hist, 'S', [0, 2])
+    expect(splitHistoryTurns(next).map((t) => t.user.slice(0, 7))).toEqual(['analyze', 'compare'])
+    expect(next[0].role).toBe('user')
   })
 })

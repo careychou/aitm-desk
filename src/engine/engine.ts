@@ -106,19 +106,20 @@ export class Session {
     }
   }
 
-  /** Summarizes the chosen older turns, drops the other older turns, keeps the last `keepRecent` verbatim. */
+  /** Keeps `plan.keep` turns verbatim, folds `plan.summarize` into the summary, drops the rest. */
   async compact(plan: CompactPlan, signal?: AbortSignal) {
     if (this.busy) throw new Error('session is busy')
     this.busy = true
     try {
       const before = this.tokenEstimate
       const turns = splitHistoryTurns(this.history)
-      const { older, summarized, dropped } = planTurns(turns, plan)
-      if (!older.length) return { before, after: before, summarized: 0, dropped: 0, summary: '' }
+      const { kept, summarized, dropped } = planTurns(turns, plan)
+      const keptIdx = kept.map((t) => t.index)
+      if (!summarized.length && !dropped.length) return { before, after: before, summarized: 0, dropped: 0, summary: '', kept: keptIdx, compacted: [] as number[] }
       const summary = await summarizeTurns(this.o.adapter, this.o.model, summarized, priorSummary(this.history), signal)
-      const next = applyCompaction(this.history, summary, plan.keepRecent)
+      const next = applyCompaction(this.history, summary, keptIdx)
       this.messages.splice(1, this.messages.length - 1, ...next)
-      return { before, after: this.tokenEstimate, summarized: summarized.length, dropped: dropped.length, summary }
+      return { before, after: this.tokenEstimate, summarized: summarized.length, dropped: dropped.length, summary, kept: keptIdx, compacted: [...summarized, ...dropped].map((t) => t.index) }
     } finally { this.busy = false }
   }
 }

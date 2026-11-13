@@ -13,11 +13,18 @@ export interface Turn {
 export interface Cluster { label: string; turns: number[]; reason?: string }
 
 export interface CompactPlan {
-  /** Turn indexes to fold into the summary; other non-recent turns are dropped. */
+  /** Turn indexes kept verbatim (any turns, in original order). */
+  keep: number[]
+  /** Turn indexes folded into the summary. Turns in neither list are dropped. */
   summarize: number[]
-  /** Number of most recent turns kept verbatim (never summarized or dropped). */
-  keepRecent: number
 }
+
+/** Plan that keeps the last `n` turns and summarizes everything before them. */
+export const keepLastPlan = (turnCount: number, n: number): CompactPlan => {
+  const cut = Math.max(0, turnCount - n)
+  return { keep: range(cut, turnCount), summarize: range(0, cut) }
+}
+const range = (a: number, b: number) => Array.from({ length: Math.max(0, b - a) }, (_, i) => a + i)
 
 const END_TAG = '</compacted_history>'
 export const COMPACT_ACK = 'Understood. I have the summary of the earlier conversation and will build on it.'
@@ -133,20 +140,22 @@ export async function summarizeTurns(adapter: ModelAdapter, model: string, turns
   return text.trim()
 }
 
-/** Builds the compacted history: [summary, ack, ...recent turns verbatim]. Pure. */
-export function applyCompaction(history: Message[], summary: string, keepRecent: number): Message[] {
-  const turns = splitHistoryTurns(history)
-  const recent = turns.slice(Math.max(0, turns.length - keepRecent)).flatMap((t) => t.messages)
+/** Builds the compacted history: [summary, ack, ...kept turns verbatim in original order]. Pure. */
+export function applyCompaction(history: Message[], summary: string, keep: number[]): Message[] {
+  const k = new Set(keep)
+  const recent = splitHistoryTurns(history).filter((t) => k.has(t.index)).flatMap((t) => t.messages)
   const head: Message[] = summary.trim()
     ? [{ role: 'user', content: `${COMPACT_TAG}\nSummary of the earlier conversation (older turns were compacted):\n\n${summary.trim()}\n${END_TAG}` }, { role: 'assistant', content: COMPACT_ACK }]
     : []
   return [...head, ...recent]
 }
 
-/** Which turns a plan compacts (all but the recent ones), and which of those get summarized vs dropped. */
+/** Splits turns per plan into kept / summarized / dropped (keep wins over summarize). */
 export function planTurns(turns: Turn[], plan: CompactPlan) {
-  const cut = Math.max(0, turns.length - plan.keepRecent)
-  const older = turns.slice(0, cut)
-  const pick = new Set(plan.summarize)
-  return { older, summarized: older.filter((t) => pick.has(t.index)), dropped: older.filter((t) => !pick.has(t.index)) }
+  const keep = new Set(plan.keep), sum = new Set(plan.summarize)
+  return {
+    kept: turns.filter((t) => keep.has(t.index)),
+    summarized: turns.filter((t) => !keep.has(t.index) && sum.has(t.index)),
+    dropped: turns.filter((t) => !keep.has(t.index) && !sum.has(t.index))
+  }
 }

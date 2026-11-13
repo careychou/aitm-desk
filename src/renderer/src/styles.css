@@ -258,3 +258,28 @@ button.danger { color: var(--fail); }
 .session.drop-before, .folder-row.drop-before { box-shadow: inset 0 2px 0 var(--blue); }
 .session.drop-after, .folder-row.drop-after { box-shadow: inset 0 -2px 0 var(--blue); }
 .session.drop-into, .folder-row.drop-into { background: #ddeafc; outline: 1px dashed var(--blue); outline-offset: -1px; }
+
+/* compaction: mode + keep/summarize/drop */
+.mode-pick { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.mode-pick > label { display: flex; gap: 10px; align-items: center; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-size: 13.5px; }
+.mode-pick > label.on { border-color: var(--accent); background: #f6f8fa; }
+.mode-pick input.n { width: 52px; padding: 2px 6px; border: 1px solid #d0d7de; border-radius: 6px; font: inherit; }
+.mode-pick input.n:disabled { background: #f3f4f6; color: var(--muted); }
+.small-label { font-size: 12.5px; }
+.act-pill { display: inline-flex; border: 1px solid #d0d7de; border-radius: 7px; overflow: hidden; flex: none; }
+.modal .act-pill button { border: 0; border-radius: 0; padding: 4px 10px; font-size: 12.5px; color: var(--muted); background: #fff; }
+.modal .act-pill.small button { padding: 2px 8px; font-size: 12px; }
+.modal .act-pill button + button { border-left: 1px solid #d0d7de; }
+.modal .act-pill button.keep.on { background: #dafbe1; color: #116329; }
+.modal .act-pill button.summarize.on { background: #ddf4ff; color: #0550ae; }
+.modal .act-pill button.drop.on { background: #ffebe9; color: #a40e26; }
+.turn-row.act-drop .turn-text, .cluster.act-drop .cluster-title b { text-decoration: line-through; color: var(--muted); }
+.turn-row .act-pill { margin-left: 8px; }
+.cluster-head .act-pill { margin-left: 8px; }
+.compact-sum { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.compact-sum .muted { font-size: 12.5px; vertical-align: baseline; }
+.compact-sum .dot { align-self: center; }
+.compact-sum .dot { width: 9px; height: 9px; border-radius: 50%; margin-left: 10px; }
+.compact-sum .dot:first-child { margin-left: 0; }
+.compact-sum .dot.keep { background: #2da44e; } .compact-sum .dot.summarize { background: #218bff; } .compact-sum .dot.drop { background: #cf222e; }
+.compact .hint { font-size: 13px; margin: -4px 0 12px; }

@@ -7,7 +7,7 @@ export type Item =
   | { t: 'tool'; agentId: string; callId: string; name: string; args: string; output?: string; ok?: boolean }
   | { t: 'agent'; agentId: string; name: string; mode: string; prompt: string; status: string; finalText: string; children: Item[] }
   | { t: 'error'; text: string }
-  | { t: 'compact'; auto: boolean; summarized: number; dropped: number; before: number; after: number; summary: string }
+  | { t: 'compact'; auto: boolean; summarized: number; dropped: number; before: number; after: number; summary: string; keptTurns?: number[]; summarizedTurns?: number[]; droppedTurns?: number[] }
 
 type AgentItem = Extract<Item, { t: 'agent' }>
 

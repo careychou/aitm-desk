@@ -8,10 +8,10 @@ import { loadSettings, saveSettings, type Settings } from './settings'
 import { OpenAIAdapter } from '../engine/adapter/openai'
 import { Session } from '../engine/engine'
 import { loadRegistry } from '../engine/registry/registry'
-import type { PermissionDecision } from '../engine/types'
+import type { Message, PermissionDecision } from '../engine/types'
 import type { CompactItem, PushEvent } from '../shared/api'
-import { insertBeforeTurn, orderRows, reorderIds, sliceItemsAtTurn, sliceMessagesAtTurn } from '../shared/fork'
-import { estimateTokens, splitHistoryTurns, type CompactPlan } from '../engine/compact'
+import { insertBeforeTurn, liveTurnMap, orderRows, reorderIds, sliceItemsAtTurn, sliceMessagesAtTurn } from '../shared/fork'
+import { estimateTokens, keepLastPlan, splitHistoryTurns, type CompactPlan } from '../engine/compact'
 
 // GUI apps launched from Finder get a minimal PATH; give shell tools a usable one.
 process.env.PATH = [process.env.PATH, '/opt/homebrew/bin', '/usr/local/bin', path.join(os.homedir(), '.local/bin')].filter(Boolean).join(':')
@@ -60,18 +60,26 @@ function getLive(id: string): Session {
 }
 
 const uiTurnCount = (id: string) => (store.loadUiItems(id) as Array<{ t: string }>).filter((i) => i.t === 'user').length
+const parseMap = (j?: string | null): number[] | null => { try { return j ? JSON.parse(j) : null } catch { return null } }
+/** UI turn index for each live-history turn of a session. */
+const turnMapOf = (id: string, msgs: Message[]) => {
+  const row = store.getSession(id)
+  return liveTurnMap(splitHistoryTurns(msgs).length, parseMap(row?.turn_map), row?.compact_offset ?? 0)
+}
 
 /** Compacts a session per plan, records a marker in the UI log, and tells the renderer. */
 async function compactSession(id: string, plan: CompactPlan, auto = false) {
   const s = getLive(id)
+  const map = turnMapOf(id, s.history)
   const r = await s.compact(plan)
   if (!r.summarized && !r.dropped) return r
-  const olderCount = r.summarized + r.dropped
-  const row = store.getSession(id)
-  store.setCompactOffset(id, (row?.compact_offset ?? 0) + olderCount)
+  store.setTurnMap(id, r.kept.map((i) => map[i]))
   store.saveMessages(id, s.history)
-  const beforeTurn = Math.max(0, uiTurnCount(id) - plan.keepRecent)
-  const item: CompactItem = { t: 'compact', auto, summarized: r.summarized, dropped: r.dropped, before: r.before, after: r.after, summary: r.summary }
+  const ui = (xs: number[]) => xs.map((i) => map[i] + 1).sort((a, b) => a - b)
+  const sum = new Set(plan.summarize)
+  const item: CompactItem = { t: 'compact', auto, summarized: r.summarized, dropped: r.dropped, before: r.before, after: r.after, summary: r.summary,
+    keptTurns: ui(r.kept), summarizedTurns: ui(r.compacted.filter((i) => sum.has(i))), droppedTurns: ui(r.compacted.filter((i) => !sum.has(i))) }
+  const beforeTurn = uiTurnCount(id)
   store.saveUiItems(id, insertBeforeTurn(store.loadUiItems(id) as Array<{ t: string }>, item, beforeTurn))
   push({ type: 'compacted', sessionId: id, item, beforeTurn })
   push({ type: 'tokens', sessionId: id, tokens: s.tokenEstimate })
@@ -85,7 +93,7 @@ async function run(id: string, s: Session, prompt?: string) {
     if (prompt && settings.autoCompact === 'auto' && s.tokenEstimate > settings.compactThreshold) {
       const turns = splitHistoryTurns(s.history)
       if (turns.length > settings.compactKeepRecent) {
-        try { await compactSession(id, { summarize: turns.map((t) => t.index), keepRecent: settings.compactKeepRecent }, true) }
+        try { await compactSession(id, keepLastPlan(turns.length, settings.compactKeepRecent), true) }
         catch (e: any) { push({ type: 'agent', sessionId: id, event: { kind: 'error', agentId: 'main', message: `Auto-compact failed: ${e.message}` } }) }
       }
     }
@@ -117,12 +125,14 @@ function registerIpc() {
     const sess = live.get(id)
     const msgs = sess ? sess.messages.slice(1) : store.loadMessages(id)
     const now = Date.now()
-    // UI turns before compact_offset were compacted; the live history only has turns from the offset on
-    const off = src.compact_offset ?? 0
+    // compaction may have removed turns from the live history: map the UI turn onto the live turns that remain
+    const map = turnMapOf(id, msgs)
+    const upto = map.filter((u) => u <= turn)
+    const compacted = !!src.turn_map || !!src.compact_offset
     const row = { id: randomUUID(), title: `${src.title.replace(/^↳ /, '')} · fork`, cwd: src.cwd, model: src.model, created_at: now, updated_at: now, parent_id: id, fork_turn: turn,
-      reasoning: src.reasoning ?? null, memories: src.memories ?? null, compact_offset: off ? Math.min(off, turn + 1) : null }
+      reasoning: src.reasoning ?? null, memories: src.memories ?? null, turn_map: compacted ? JSON.stringify(upto) : null }
     store.createSession(row)
-    store.saveMessages(row.id, sliceMessagesAtTurn(msgs, Math.max(-1, turn - off)))
+    store.saveMessages(row.id, sliceMessagesAtTurn(msgs, upto.length - 1))
     store.saveUiItems(row.id, sliceItemsAtTurn(store.loadUiItems(id) as Array<{ t: string }>, turn))
     pushSessions()
     return row
@@ -167,7 +177,7 @@ function registerIpc() {
   ipcMain.handle('removeBookmark', (_e, id: string) => { store.removeBookmark(id); pushSessions() })
   ipcMain.handle('analyzeTurns', async (_e, id: string) => {
     const s = getLive(id)
-    return { ...(await s.analyzeTurns()), uiOffset: store.getSession(id)?.compact_offset ?? 0 }
+    return { ...(await s.analyzeTurns()), uiTurns: turnMapOf(id, s.history) }
   })
   ipcMain.handle('compact', async (_e, id: string, plan: CompactPlan) => {
     const s = getLive(id)

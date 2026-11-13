@@ -87,7 +87,13 @@ function CompactMarker({ it }: { it: Extract<Item, { t: 'compact' }> }) {
       <button onClick={() => setOpen(!open)}>
         <span className="line" /><span className="lbl">⇲ {it.auto ? 'Auto-compacted' : 'Compacted'}: {it.summarized} turn(s) summarized{it.dropped ? `, ${it.dropped} dropped` : ''} · ~{k(it.before)} → ~{k(it.after)} tokens {open ? '▾' : '▸'}</span><span className="line" />
       </button>
-      {open && <div className="compact-summary"><div className="muted">The agent now remembers everything above as this summary:</div><Markdown text={it.summary} /></div>}
+      {open && (
+        <div className="compact-summary">
+          {it.keptTurns && <div className="muted">Kept word-for-word: {it.keptTurns.length ? `turns ${it.keptTurns.join(', ')}` : 'none'} · Summarized: {it.summarizedTurns?.length ? it.summarizedTurns.join(', ') : 'none'} · Dropped: {it.droppedTurns?.length ? it.droppedTurns.join(', ') : 'none'}</div>}
+          <div className="muted">Summary the agent now carries:</div>
+          <Markdown text={it.summary} />
+        </div>
+      )}
     </div>
   )
 }
