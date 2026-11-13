@@ -43,13 +43,23 @@ export function orderRows<T extends Orderable>(rows: T[]): T[] {
   })
 }
 
-/** Moves `id` one step (dir -1 up / +1 down) within `rows`; returns the new id order, or null if it can't move. */
-export function moveInOrder<T extends Orderable & { id: string }>(rows: T[], id: string, dir: -1 | 1): string[] | null {
-  const ids = orderRows(rows).map((r) => r.id)
-  const i = ids.indexOf(id), j = i + dir
-  if (i < 0 || j < 0 || j >= ids.length) return null
-  ;[ids[i], ids[j]] = [ids[j], ids[i]]
-  return ids
+/** Returns `ids` with `id` moved before/after `targetId` (appended when targetId is null or missing). `id` may be absent from `ids`. */
+export function reorderIds(ids: string[], id: string, targetId: string | null, before: boolean): string[] {
+  const out = ids.filter((x) => x !== id)
+  const t = targetId ? out.indexOf(targetId) : -1
+  if (t < 0) out.push(id)
+  else out.splice(before ? t : t + 1, 0, id)
+  return out
+}
+
+/** True if `id` is `ancestorId` or nested anywhere under it (via parent_id). */
+export function isWithin<T extends { id: string; parent_id: string | null }>(rows: T[], ancestorId: string, id: string | null): boolean {
+  const byId = new Map(rows.map((r) => [r.id, r]))
+  for (let cur = id, n = 0; cur && n < 1000; n++) {
+    if (cur === ancestorId) return true
+    cur = byId.get(cur)?.parent_id ?? null
+  }
+  return false
 }
 
 export interface TreeNode<T> { row: T; children: TreeNode<T>[] }

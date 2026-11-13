@@ -252,3 +252,9 @@ button.danger { color: var(--fail); }
 .compact-marker .lbl { flex: none; }
 .compact-summary { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin-top: 6px; font-size: 14px; }
 .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1f2328; color: #fff; padding: 9px 16px; border-radius: 8px; font-size: 13.5px; z-index: 30; box-shadow: 0 6px 20px rgba(0,0,0,.2); }
+
+/* drag & drop */
+.session[draggable="true"] { -webkit-user-drag: element; }
+.session.drop-before, .folder-row.drop-before { box-shadow: inset 0 2px 0 var(--blue); }
+.session.drop-after, .folder-row.drop-after { box-shadow: inset 0 -2px 0 var(--blue); }
+.session.drop-into, .folder-row.drop-into { background: #ddeafc; outline: 1px dashed var(--blue); outline-offset: -1px; }

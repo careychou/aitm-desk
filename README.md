@@ -42,8 +42,9 @@ On first launch open **⚙ Settings** and set your model endpoint's **Base URL**
 ### Chats & organization
 - **Working folders** — the sidebar groups chats by folder, Copilot-style. Pick the folder when starting a chat; skills/agents reload per folder.
 - **Fork from any turn** — hover a turn → *⑂ Fork from here*. The fork gets the history up to that point and is filed **under the chat it came from** (forks of forks nest).
-- **Rename, reorder, delete** — ⋯ menu / right-click / double-click to rename; move up/down.
-- **Bookmarks** — a pinned section at the top of the sidebar with nestable folders. Pin chats into folders, reorder, move between folders.
+- **Drag & drop** — drag chats to reorder them (within the same folder/level), drag a chat onto **Bookmarks** or a bookmark folder to pin it, and drag pins/folders to reorder or nest them.
+- **Rename & delete** — double-click to rename, or use the ⋯ menu / right-click.
+- **Bookmarks** — a pinned section at the top of the sidebar with nestable folders.
 
 ### Memory & context
 - **Share a session** — export **all turns or selected turns** to Markdown (optionally with tool calls and thinking), save to a file or copy to clipboard.

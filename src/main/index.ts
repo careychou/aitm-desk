@@ -10,7 +10,7 @@ import { Session } from '../engine/engine'
 import { loadRegistry } from '../engine/registry/registry'
 import type { PermissionDecision } from '../engine/types'
 import type { CompactItem, PushEvent } from '../shared/api'
-import { insertBeforeTurn, moveInOrder, sliceItemsAtTurn, sliceMessagesAtTurn } from '../shared/fork'
+import { insertBeforeTurn, orderRows, reorderIds, sliceItemsAtTurn, sliceMessagesAtTurn } from '../shared/fork'
 import { estimateTokens, splitHistoryTurns, type CompactPlan } from '../engine/compact'
 
 // GUI apps launched from Finder get a minimal PATH; give shell tools a usable one.
@@ -150,26 +150,21 @@ function registerIpc() {
   ipcMain.handle('saveItems', (_e, id: string, items: unknown[]) => store.saveUiItems(id, items))
   ipcMain.handle('setModel', (_e, id: string, model: string) => { store.updateSession(id, { model }); live.get(id)?.setModel(model); settings.defaultModel = model; saveSettings(settings) })
   ipcMain.handle('renameSession', (_e, id: string, title: string) => { if (title.trim()) { store.updateSession(id, { title: title.trim().slice(0, 120) }); pushSessions() } })
-  ipcMain.handle('moveSession', (_e, id: string, dir: -1 | 1) => {
-    const row = store.getSession(id)
-    if (!row) return
-    const sibs = store.listSessions().filter((s) => s.cwd === row.cwd && (s.parent_id ?? null) === (row.parent_id ?? null))
-    const order = moveInOrder(sibs, id, dir)
-    if (order) { store.setOrder(order); pushSessions() }
+  ipcMain.handle('reorderSession', (_e, id: string, targetId: string, before: boolean) => {
+    const row = store.getSession(id), target = store.getSession(targetId)
+    if (!row || !target || row.cwd !== target.cwd || (row.parent_id ?? null) !== (target.parent_id ?? null)) return
+    const sibs = orderRows(store.listSessions().filter((s) => s.cwd === row.cwd && (s.parent_id ?? null) === (row.parent_id ?? null)))
+    store.setOrder(reorderIds(sibs.map((s) => s.id), id, targetId, before)); pushSessions()
   })
-  ipcMain.handle('pinSession', (_e, sessionId: string, parentId: string | null) => { store.addBookmark({ id: randomUUID(), kind: 'pin', name: null, session_id: sessionId, parent_id: parentId }); pushSessions() })
+  ipcMain.handle('pinSession', (_e, sessionId: string, parentId: string | null, targetId: string | null = null, before = false) => {
+    let pid = store.pinId(sessionId)
+    if (!pid) { pid = randomUUID(); store.addBookmark({ id: pid, kind: 'pin', name: null, session_id: sessionId, parent_id: parentId }) }
+    store.placeBookmark(pid, parentId, targetId, before); pushSessions()
+  })
+  ipcMain.handle('placeBookmark', (_e, id: string, parentId: string | null, targetId: string | null, before: boolean) => { store.placeBookmark(id, parentId, targetId, before); pushSessions() })
   ipcMain.handle('addBookmarkFolder', (_e, name: string, parentId: string | null) => { store.addBookmark({ id: randomUUID(), kind: 'folder', name: name.trim() || 'New folder', session_id: null, parent_id: parentId }); pushSessions() })
   ipcMain.handle('updateBookmark', (_e, id: string, patch: { name?: string; parent_id?: string | null; collapsed?: number }) => { store.updateBookmark(id, patch); pushSessions() })
   ipcMain.handle('removeBookmark', (_e, id: string) => { store.removeBookmark(id); pushSessions() })
-  ipcMain.handle('moveBookmark', (_e, id: string, dir: -1 | 1) => {
-    const all = store.listBookmarks(), me = all.find((b) => b.id === id)
-    if (!me) return
-    const ids = all.filter((b) => b.parent_id === me.parent_id).map((b) => b.id)
-    const i = ids.indexOf(id), j = i + dir
-    if (j < 0 || j >= ids.length) return
-    ;[ids[i], ids[j]] = [ids[j], ids[i]]
-    store.setBookmarkOrder(ids); pushSessions()
-  })
   ipcMain.handle('analyzeTurns', async (_e, id: string) => {
     const s = getLive(id)
     return { ...(await s.analyzeTurns()), uiOffset: store.getSession(id)?.compact_offset ?? 0 }

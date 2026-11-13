@@ -27,12 +27,12 @@ export interface DeskApi {
   forkSession(id: string, turn: number): Promise<SessionRow>
   openSession(id: string): Promise<{ session: SessionRow; items: unknown[]; busy: boolean; tokens: number }>
   renameSession(id: string, title: string): Promise<void>
-  moveSession(id: string, dir: -1 | 1): Promise<void>
-  pinSession(sessionId: string, parentId: string | null): Promise<void>
+  reorderSession(id: string, targetId: string, before: boolean): Promise<void>
+  pinSession(sessionId: string, parentId: string | null, targetId?: string | null, before?: boolean): Promise<void>
+  placeBookmark(id: string, parentId: string | null, targetId: string | null, before: boolean): Promise<void>
   addBookmarkFolder(name: string, parentId: string | null): Promise<void>
   updateBookmark(id: string, patch: { name?: string; parent_id?: string | null; collapsed?: number }): Promise<void>
   removeBookmark(id: string): Promise<void>
-  moveBookmark(id: string, dir: -1 | 1): Promise<void>
   analyzeTurns(id: string): Promise<TurnAnalysis>
   compact(id: string, plan: { summarize: number[]; keepRecent: number }): Promise<{ before: number; after: number; summarized: number; dropped: number }>
   createSession(opts: { cwd: string; model: string; reasoning?: Settings['reasoning']; memories?: string[] }): Promise<SessionRow>

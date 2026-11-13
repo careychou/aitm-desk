@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { Message } from '../engine/types'
+import { isWithin, reorderIds } from '../shared/fork'
 
 export interface SessionRow { id: string; title: string; cwd: string; model: string; created_at: number; updated_at: number; parent_id: string | null; fork_turn: number | null; reasoning?: string | null; memories?: string | null; sort_order?: number | null; compact_offset?: number | null }
 export interface FolderRow { path: string; added_at: number }
@@ -78,6 +79,17 @@ export class Store {
     const n = { ...cur, ...patch }
     const order = patch.parent_id !== undefined && patch.parent_id !== cur.parent_id ? this.nextBookmarkOrder(n.parent_id) : cur.sort_order
     this.db.prepare('UPDATE bookmarks SET name = ?, parent_id = ?, collapsed = ?, sort_order = ? WHERE id = ?').run(n.name, n.parent_id, n.collapsed, order, id)
+  }
+  /** Moves a bookmark under `parent` (null = top), positioned before/after `targetId` or appended. Refuses folder cycles. */
+  placeBookmark(id: string, parent: string | null, targetId: string | null, before: boolean) {
+    const all = this.listBookmarks()
+    if (!all.some((b) => b.id === id) || (parent && isWithin(all, id, parent))) return
+    this.db.prepare('UPDATE bookmarks SET parent_id = ? WHERE id = ?').run(parent, id)
+    const sibs = all.filter((b) => b.parent_id === parent && b.id !== id).map((b) => b.id)
+    this.setBookmarkOrder(reorderIds(sibs, id, targetId, before))
+  }
+  pinId(sessionId: string): string | undefined {
+    return (this.db.prepare("SELECT id FROM bookmarks WHERE kind = 'pin' AND session_id = ?").get(sessionId) as any)?.id
   }
   setBookmarkOrder(ids: string[]) {
     const st = this.db.prepare('UPDATE bookmarks SET sort_order = ? WHERE id = ?')

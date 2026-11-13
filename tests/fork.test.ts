@@ -36,16 +36,24 @@ describe('buildTree', () => {
   })
 })
 
-import { orderRows, moveInOrder, insertBeforeTurn } from '../src/shared/fork'
+import { orderRows, reorderIds, isWithin, insertBeforeTurn } from '../src/shared/fork'
 describe('ordering', () => {
   const rows = [{ id: 'a', updated_at: 1, sort_order: null }, { id: 'b', updated_at: 3, sort_order: null }, { id: 'c', updated_at: 9, sort_order: 0 }, { id: 'd', updated_at: 2, sort_order: 1 }]
   it('puts un-arranged rows first (newest first) then manual order', () => {
     expect(orderRows(rows).map((r) => r.id)).toEqual(['b', 'a', 'c', 'd'])
   })
-  it('moves within siblings and refuses past the ends', () => {
-    expect(moveInOrder(rows, 'c', -1)).toEqual(['b', 'c', 'a', 'd'])
-    expect(moveInOrder(rows, 'b', -1)).toBeNull()
-    expect(moveInOrder(rows, 'd', 1)).toBeNull()
+  it('reorders an id before/after a target, or appends', () => {
+    expect(reorderIds(['a', 'b', 'c', 'd'], 'd', 'b', true)).toEqual(['a', 'd', 'b', 'c'])
+    expect(reorderIds(['a', 'b', 'c', 'd'], 'a', 'c', false)).toEqual(['b', 'c', 'a', 'd'])
+    expect(reorderIds(['a', 'b'], 'x', null, true)).toEqual(['a', 'b', 'x'])
+    expect(reorderIds(['a', 'b'], 'x', 'a', true)).toEqual(['x', 'a', 'b'])
+  })
+  it('detects a node inside its own subtree (to block folder cycles)', () => {
+    const t = [{ id: 'f1', parent_id: null }, { id: 'f2', parent_id: 'f1' }, { id: 'f3', parent_id: 'f2' }, { id: 'g', parent_id: null }]
+    expect(isWithin(t, 'f1', 'f3')).toBe(true)
+    expect(isWithin(t, 'f1', 'f1')).toBe(true)
+    expect(isWithin(t, 'f2', 'g')).toBe(false)
+    expect(isWithin(t, 'f1', null)).toBe(false)
   })
   it('inserts an item before a given UI turn', () => {
     const items = [{ t: 'user' }, { t: 'assistant' }, { t: 'user' }, { t: 'assistant' }]

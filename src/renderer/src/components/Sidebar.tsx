@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { BookmarkRow, FolderRow, SessionRow } from '../../../shared/api'
-import { buildTree, type TreeNode } from '../../../shared/fork'
+import { buildTree, isWithin, type TreeNode } from '../../../shared/fork'
 import { Menu, at, type MenuEntry, type MenuState } from './Menu'
 
 interface Props {
@@ -22,10 +22,51 @@ interface Props {
 
 const base = (p: string) => p.split('/').filter(Boolean).pop() ?? p
 
+type Drag = { kind: 'session'; id: string } | { kind: 'bookmark'; id: string }
+type Zone = 'before' | 'after' | 'into'
 type Ctx = Props & {
   setMenu(m: MenuState | null): void
   editing: string | null
   setEditing(key: string | null): void
+  drag: React.MutableRefObject<Drag | null>
+  over: { key: string; zone: Zone } | null
+  setOver(o: { key: string; zone: Zone } | null): void
+}
+
+/** Where on a row the pointer is: top/bottom half, or (for containers) top quarter / middle / bottom quarter. */
+function zoneOf(e: React.DragEvent, container: boolean): Zone {
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  const y = (e.clientY - r.top) / r.height
+  if (!container) return y < 0.5 ? 'before' : 'after'
+  return y < 0.25 ? 'before' : y > 0.75 ? 'after' : 'into'
+}
+
+/** Drag/drop props for a row. `accept` returns the allowed zone (or null) for the current drag; `drop` performs it. */
+function dnd(c: Ctx, key: string, start: Drag, accept: (d: Drag, z: Zone) => Zone | null, drop: (d: Drag, z: Zone) => void, container = false) {
+  const cls = c.over?.key === key ? ` drop-${c.over.zone}` : ''
+  return {
+    cls,
+    props: {
+      draggable: c.editing === null,
+      onDragStart: (e: React.DragEvent) => { c.drag.current = start; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', key); e.stopPropagation() },
+      onDragEnd: () => { c.drag.current = null; c.setOver(null) },
+      onDragOver: (e: React.DragEvent) => {
+        const d = c.drag.current
+        if (!d) return
+        const z = accept(d, zoneOf(e, container))
+        if (!z) { if (c.over?.key === key) c.setOver(null); return }
+        e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'
+        if (c.over?.key !== key || c.over.zone !== z) c.setOver({ key, zone: z })
+      },
+      onDragLeave: (e: React.DragEvent) => { if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node) && c.over?.key === key) c.setOver(null) },
+      onDrop: (e: React.DragEvent) => {
+        const d = c.drag.current, z = c.over?.key === key ? c.over.zone : null
+        c.drag.current = null; c.setOver(null)
+        if (!d || !z) return
+        e.preventDefault(); e.stopPropagation(); drop(d, z)
+      }
+    }
+  }
 }
 
 function InlineEdit({ value, onDone }: { value: string; onDone(v: string | null): void }) {
@@ -72,14 +113,17 @@ function SessionNode({ node, depth, c }: { node: TreeNode<SessionRow>; depth: nu
   const [open, setOpen] = useState(true)
   const s = node.row
   const hasKids = node.children.length > 0
-  const menu = (e: React.MouseEvent) => c.setMenu(at(e, sessionMenu(s, c, [
-    'sep',
-    { label: '↑ Move up', onClick: () => window.desk.moveSession(s.id, -1) },
-    { label: '↓ Move down', onClick: () => window.desk.moveSession(s.id, 1) }
-  ])))
+  const menu = (e: React.MouseEvent) => c.setMenu(at(e, sessionMenu(s, c)))
+  const d = dnd(c, `s:${s.id}`, { kind: 'session', id: s.id },
+    (dr, z) => {
+      if (dr.kind !== 'session' || dr.id === s.id) return null
+      const o = c.sessions.find((x) => x.id === dr.id)
+      return o && o.cwd === s.cwd && (o.parent_id ?? null) === (s.parent_id ?? null) ? z : null
+    },
+    (dr, z) => window.desk.reorderSession(dr.id, s.id, z === 'before'))
   return (
     <>
-      <div className={`session ${c.currentId === s.id ? 'on' : ''}`} style={{ paddingLeft: 12 + depth * 18 }} onClick={() => c.onOpen(s.id)}
+      <div className={`session ${c.currentId === s.id ? 'on' : ''}${d.cls}`} {...d.props} style={{ paddingLeft: 12 + depth * 18 }} onClick={() => c.onOpen(s.id)}
         onDoubleClick={() => c.setEditing(`s:${s.id}`)} onContextMenu={menu} title={s.title}>
         {hasKids
           ? <button className="twisty" onClick={(e) => { e.stopPropagation(); setOpen(!open) }}>{open ? '▾' : '▸'}</button>
@@ -98,23 +142,38 @@ function SessionNode({ node, depth, c }: { node: TreeNode<SessionRow>; depth: nu
 function BookmarkNode({ b, depth, c }: { b: BookmarkRow; depth: number; c: Ctx }) {
   const pad = { paddingLeft: 12 + depth * 18 }
   const move: MenuEntry[] = [
-    { label: '↑ Move up', onClick: () => window.desk.moveBookmark(b.id, -1) },
-    { label: '↓ Move down', onClick: () => window.desk.moveBookmark(b.id, 1) },
     ...folderTargets(c.bookmarks, b.kind === 'folder' ? b.id : undefined).filter((f) => f.id !== b.parent_id)
       .map((f) => ({ label: `→ Move to ${f.label.trim()}`, onClick: () => window.desk.updateBookmark(b.id, { parent_id: f.id }) }))
   ]
+  const isFolder = b.kind === 'folder'
+  const d = dnd(c, `b:${b.id}`, { kind: 'bookmark', id: b.id },
+    (dr, z) => {
+      if (dr.kind === 'bookmark') {
+        if (dr.id === b.id) return null
+        const target = z === 'into' ? b.id : b.parent_id
+        if (target && isWithin(c.bookmarks, dr.id, target)) return null
+      }
+      return z
+    },
+    (dr, z) => {
+      const parent = z === 'into' ? b.id : b.parent_id
+      const targetId = z === 'into' ? null : b.id
+      if (dr.kind === 'session') void window.desk.pinSession(dr.id, parent, targetId, z === 'before')
+      else void window.desk.placeBookmark(dr.id, parent, targetId, z === 'before')
+      if (z === 'into' && b.collapsed) void window.desk.updateBookmark(b.id, { collapsed: 0 })
+    }, isFolder)
   if (b.kind === 'pin') {
     const s = c.sessions.find((x) => x.id === b.session_id)
     if (!s) return null
     const menu = (e: React.MouseEvent) => c.setMenu(at(e, [
       { label: '✎ Rename', onClick: () => c.setEditing(`b:${b.id}`) },
       { label: '★ Unpin', onClick: () => window.desk.removeBookmark(b.id) },
-      'sep', ...move, 'sep',
+      ...(move.length ? ['sep' as const, ...move] : []), 'sep',
       { label: '⇪ Share / export…', onClick: () => c.onShare(s) },
       { label: '⇲ Compact history…', onClick: () => c.onCompact(s) }
     ]))
     return (
-      <div className={`session pin ${c.currentId === s.id ? 'on' : ''}`} style={pad} onClick={() => c.onOpen(s.id)}
+      <div className={`session pin ${c.currentId === s.id ? 'on' : ''}${d.cls}`} {...d.props} style={pad} onClick={() => c.onOpen(s.id)}
         onDoubleClick={() => c.setEditing(`b:${b.id}`)} onContextMenu={menu} title={`${s.title}\n${s.cwd}`}>
         <span className="pin-mark">★</span>
         {c.editing === `b:${b.id}`
@@ -130,12 +189,12 @@ function BookmarkNode({ b, depth, c }: { b: BookmarkRow; depth: number; c: Ctx }
   const menu = (e: React.MouseEvent) => c.setMenu(at(e, [
     { label: '✎ Rename folder', onClick: () => c.setEditing(`b:${b.id}`) },
     { label: '＋ New subfolder', onClick: () => window.desk.addBookmarkFolder('New folder', b.id) },
-    'sep', ...move, 'sep',
+    ...(move.length ? ['sep' as const, ...move] : []), 'sep',
     { label: '🗑 Delete folder (keeps pins)', danger: true, onClick: () => window.desk.removeBookmark(b.id) }
   ]))
   return (
     <>
-      <div className="session bm-folder" style={pad} onClick={() => window.desk.updateBookmark(b.id, { collapsed: open ? 1 : 0 })}
+      <div className={`session bm-folder${d.cls}`} {...d.props} style={pad} onClick={() => window.desk.updateBookmark(b.id, { collapsed: open ? 1 : 0 })}
         onDoubleClick={(e) => { e.stopPropagation(); c.setEditing(`b:${b.id}`) }} onContextMenu={menu}>
         <span className="twisty">{open ? '▾' : '▸'}</span>
         <span className="folder-icon">{open ? '📂' : '📁'}</span>
@@ -147,7 +206,7 @@ function BookmarkNode({ b, depth, c }: { b: BookmarkRow; depth: number; c: Ctx }
       </div>
       {open && (kids.length
         ? kids.map((k) => <BookmarkNode key={k.id} b={k} depth={depth + 1} c={c} />)
-        : <div className="session empty-hint" style={{ paddingLeft: 30 + (depth + 1) * 18 }}>Empty, pin a chat here from its ⋯ menu</div>)}
+        : <div className="session empty-hint" style={{ paddingLeft: 30 + (depth + 1) * 18 }}>Empty, drag chats here</div>)}
     </>
   )
 }
@@ -174,7 +233,14 @@ export function Sidebar(p: Props) {
   const [menu, setMenu] = useState<MenuState | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
   const [bmOpen, setBmOpen] = useState(true)
-  const c: Ctx = { ...p, setMenu, editing, setEditing }
+  const drag = useRef<Drag | null>(null)
+  const [over, setOver] = useState<{ key: string; zone: Zone } | null>(null)
+  const c: Ctx = { ...p, setMenu, editing, setEditing, drag, over, setOver }
+  const bmRoot = dnd(c, 'bm-root', { kind: 'bookmark', id: '' }, () => 'into', (dr) => {
+    setBmOpen(true)
+    if (dr.kind === 'session') void window.desk.pinSession(dr.id, null, null, false)
+    else void window.desk.placeBookmark(dr.id, null, null, false)
+  }, true)
   const top = p.bookmarks.filter((b) => b.parent_id === null)
   return (
     <aside className="sidebar">
@@ -184,14 +250,15 @@ export function Sidebar(p: Props) {
       <button className="new-chat" onClick={() => p.onNewChat('')}>✎ New chat</button>
       <div className="sessions">
         <div className="folder-group bookmarks">
-          <div className="folder-row section" onClick={() => setBmOpen(!bmOpen)}>
+          <div className={`folder-row section${bmRoot.cls}`} onDragOver={bmRoot.props.onDragOver} onDragLeave={bmRoot.props.onDragLeave} onDrop={bmRoot.props.onDrop}
+            onClick={() => setBmOpen(!bmOpen)} title="Drop a chat here to pin it">
             <span className="folder-icon">★</span>
             <span className="title">Bookmarks</span>
             <button className="folder-act" title="New bookmark folder" onClick={(e) => { e.stopPropagation(); setBmOpen(true); void window.desk.addBookmarkFolder('New folder', null) }}>＋</button>
           </div>
           {bmOpen && (top.length
             ? top.map((b) => <BookmarkNode key={b.id} b={b} depth={0} c={c} />)
-            : <div className="session empty-hint">Pin chats from their ⋯ menu</div>)}
+            : <div className={`session empty-hint${bmRoot.cls}`} onDragOver={bmRoot.props.onDragOver} onDragLeave={bmRoot.props.onDragLeave} onDrop={bmRoot.props.onDrop}>Drag a chat here, or pin it from its ⋯ menu</div>)}
         </div>
         <div className="side-divider" />
         {p.folders.map((f) => <FolderGroup key={f.path} folder={f} sessions={p.sessions.filter((s) => s.cwd === f.path)} c={c} />)}
