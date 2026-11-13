@@ -79,7 +79,7 @@ pre, code { font-family: "SF Mono", Menlo, monospace; font-size: 12.5px; }
 .fbtn:disabled { cursor: default; }
 .effort-pick { border: 0; background: transparent; color: #3b434b; font: inherit; font-size: 13.5px; padding: 3px 6px; border-radius: 6px; }
 .effort-pick:hover { background: var(--hover); }
-.mode-pick.autopilot { color: #8250df; }
+.run-mode.autopilot { color: #8250df; }
 .mem-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; padding: 2px 4px 2px 8px; border-radius: 999px; background: #e8eef9; color: #24427a; max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mem-chip button { color: #5b6f94; width: 16px; height: 16px; border-radius: 50%; line-height: 1; }
 .mem-chip button:hover { background: #d3dcef; }

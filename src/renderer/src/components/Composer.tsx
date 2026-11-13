@@ -135,7 +135,7 @@ export function Composer(p: Props) {
         <button className="fbtn" onClick={p.onPickFolder} disabled={!p.onPickFolder} title={p.cwd}>
           <span>🗀</span> {folderName(p.cwd)}
         </button>
-        <select className={`effort-pick mode-pick ${p.mode}`} value={p.mode} onChange={(e) => p.onMode(e.target.value as Mode)} title="Interactive asks before running shell commands, writing files or fetching URLs. Autopilot approves them automatically.">
+        <select className={`effort-pick run-mode ${p.mode}`} value={p.mode} onChange={(e) => p.onMode(e.target.value as Mode)} title="Interactive asks before running shell commands, writing files or fetching URLs. Autopilot approves them automatically.">
           <option value="interactive">✋ Interactive</option>
           <option value="autopilot">🚀 Autopilot</option>
         </select>
