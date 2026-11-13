@@ -4,6 +4,8 @@ import { loadRegistry, type Registry } from './registry/registry'
 import { AgentManager } from './manager'
 import { runLoop, AbortedError } from './loop'
 import { selectTools } from './tools'
+import { ShellManager } from './tools/shell'
+import { closeSessionDb } from './tools/sql'
 import { buildMainSystem } from './prompt'
 import { applyCompaction, clusterTurns, estimateTokens, planTurns, priorSummary, splitHistoryTurns, summarizeTurns, type CompactPlan } from './compact'
 
@@ -20,6 +22,8 @@ export interface SessionOptions {
   reasoning?: 'off' | 'low' | 'medium' | 'high'
   /** Paths of exported sessions to load as prior memory. */
   memories?: string[]
+  /** Per-chat folder for scratch state (sql tool database). */
+  stateDir?: string
   /** Prior conversation (without system message) to resume. */
   history?: Message[]
 }
@@ -31,6 +35,7 @@ export class Session {
   readonly registry: Registry
   readonly manager: AgentManager
   readonly messages: Message[]
+  readonly shells = new ShellManager()
   private busy = false
   private queue: Array<{ qid?: string; content: Message['content'] }> = []
 
@@ -38,7 +43,8 @@ export class Session {
     this.registry = loadRegistry({ cwd: o.cwd, home: o.home })
     this.manager = new AgentManager({
       adapter: o.adapter, hooks: o.hooks, registry: this.registry, cwd: o.cwd, model: o.model,
-      maxConcurrency: o.maxConcurrency ?? 4, maxTurnsSub: o.maxTurnsSub ?? 30, autoApprove: o.autoApprove, reasoning: o.reasoning ?? 'medium'
+      maxConcurrency: o.maxConcurrency ?? 4, maxTurnsSub: o.maxTurnsSub ?? 30, autoApprove: o.autoApprove, reasoning: o.reasoning ?? 'medium',
+      shells: this.shells, stateDir: o.stateDir
     })
     this.messages = [{ role: 'system', content: buildMainSystem(this.registry, o.cwd, o.memories) }, ...(o.history ?? [])]
     this.manager.onBackgroundDone = (parentId) => {
@@ -53,6 +59,10 @@ export class Session {
 
   setModel(model: string) { this.o.model = model; this.manager.o.model = model }
   setReasoning(r: 'off' | 'low' | 'medium' | 'high') { this.o.reasoning = r; this.manager.o.reasoning = r }
+  /** interactive asks before shell/write/url tools; autopilot approves them automatically. */
+  setMode(mode: 'interactive' | 'autopilot') { this.manager.gate.setAutoApprove(mode === 'autopilot') }
+  /** Stops background shells and closes the scratch database. */
+  dispose() { this.shells.dispose(); if (this.o.stateDir) closeSessionDb(this.o.stateDir) }
   /** Replaces attached memories; takes effect on the next model call. */
   setMemories(paths: string[]) { this.o.memories = paths; this.messages[0] = { role: 'system', content: buildMainSystem(this.registry, this.o.cwd, paths) } }
 
@@ -76,7 +86,7 @@ export class Session {
         text = await runLoop({
           agentId: MAIN_ID, model: this.o.model, adapter: this.o.adapter, sem: this.manager.sem, hooks: this.o.hooks,
           tools: selectTools(undefined, 0), signal: controller.signal, maxTurns: this.o.maxTurnsMain ?? 50, reasoning: this.o.reasoning ?? 'medium',
-          ctx: { cwd: this.o.cwd, depth: 0, hooks: this.o.hooks, gate: this.manager.gate, registry: this.registry, agents: this.manager },
+          ctx: { cwd: this.o.cwd, depth: 0, hooks: this.o.hooks, gate: this.manager.gate, registry: this.registry, agents: this.manager, shells: this.shells, stateDir: this.o.stateDir },
           drainNotifications: () => this.manager.drain(MAIN_ID),
           drainInput: () => this.drainQueue()
         }, this.messages)

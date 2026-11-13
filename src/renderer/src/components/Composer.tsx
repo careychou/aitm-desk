@@ -17,6 +17,8 @@ interface Props {
   autoFocus?: boolean
   effort: Effort
   onEffort(e: Effort): void
+  mode: Mode
+  onMode(m: Mode): void
   memories: string[]
   onAddMemory(): void
   onRemoveMemory(path: string): void
@@ -25,6 +27,7 @@ interface Props {
   onCompact?: () => void
 }
 
+export type Mode = 'interactive' | 'autopilot'
 export type Effort = 'off' | 'low' | 'medium' | 'high'
 const EFFORTS: Array<[Effort, string]> = [['off', 'Thinking off'], ['low', 'Low effort'], ['medium', 'Medium effort'], ['high', 'High effort']]
 const fileName = (p: string) => p.split('/').pop() ?? p
@@ -132,6 +135,10 @@ export function Composer(p: Props) {
         <button className="fbtn" onClick={p.onPickFolder} disabled={!p.onPickFolder} title={p.cwd}>
           <span>🗀</span> {folderName(p.cwd)}
         </button>
+        <select className={`effort-pick mode-pick ${p.mode}`} value={p.mode} onChange={(e) => p.onMode(e.target.value as Mode)} title="Interactive asks before running shell commands, writing files or fetching URLs. Autopilot approves them automatically.">
+          <option value="interactive">✋ Interactive</option>
+          <option value="autopilot">🚀 Autopilot</option>
+        </select>
         <select className="effort-pick" value={p.effort} onChange={(e) => p.onEffort(e.target.value as Effort)} title="Reasoning effort / model thinking for this chat">
           {EFFORTS.map(([v, l]) => <option key={v} value={v}>💭 {l}</option>)}
         </select>

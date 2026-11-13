@@ -3,7 +3,7 @@ import type { AttachMeta, BookmarkRow, FolderRow, Listing, PreparedAttachment, P
 import { insertBeforeTurn } from '../../shared/fork'
 import { applyEvent, runningBackground, settle, type Item } from './state'
 import { ItemList } from './components/Cards'
-import { Composer, type Effort } from './components/Composer'
+import { Composer, type Effort, type Mode } from './components/Composer'
 import { ShareModal } from './components/ShareModal'
 import { CompactModal } from './components/CompactModal'
 import { AskCard, PermissionCard, type AskReq, type PermissionReq } from './components/Prompts'
@@ -40,6 +40,8 @@ export function App() {
   const [draftCwd, setDraftCwd] = useState('')
   const [defaultEffort, setDefaultEffort] = useState<Effort>('medium')
   const [draftEffort, setDraftEffort] = useState<Effort | null>(null)
+  const [defaultMode, setDefaultMode] = useState<Mode>('autopilot')
+  const [draftMode, setDraftMode] = useState<Mode | null>(null)
   const [draftMem, setDraftMem] = useState<string[]>([])
   const [sharing, setSharing] = useState<SessionRow | null>(null)
   const [reg, setReg] = useState<RegistryInfo | null>(null)
@@ -90,7 +92,7 @@ export function App() {
 
   useEffect(() => {
     void window.desk.listSessions().then(applyListing)
-    void window.desk.getSettings().then((s) => { setDraftModel(s.defaultModel); setDraftCwd(s.defaultCwd); setDefaultEffort(s.reasoning); setCompactCfg({ mode: s.autoCompact, threshold: s.compactThreshold, keep: s.compactKeepRecent }) })
+    void window.desk.getSettings().then((s) => { setDraftModel(s.defaultModel); setDraftCwd(s.defaultCwd); setDefaultEffort(s.reasoning); setDefaultMode(s.defaultMode); setCompactCfg({ mode: s.autoCompact, threshold: s.compactThreshold, keep: s.compactKeepRecent }) })
     void refreshModels()
     return window.desk.onPush((p: PushEvent) => {
       if (p.type === 'sessions') { applyListing(p); return }
@@ -144,13 +146,13 @@ export function App() {
   const newChat = async (folder: string) => {
     await persistCurrent()
     if (folder) setDraftCwd(folder)
-    setCurrent(null); setItems([]); setBusy(false); setPerms([]); setAsks([]); setFolderMenu(false); setDraftEffort(null); setDraftMem([]); setTokens(0)
+    setCurrent(null); setItems([]); setBusy(false); setPerms([]); setAsks([]); setFolderMenu(false); setDraftEffort(null); setDraftMode(null); setDraftMem([]); setTokens(0)
   }
 
   const send = async (text: string, atts: PreparedAttachment[] = []) => {
     let s = current
     if (!s) {
-      s = await window.desk.createSession({ cwd: draftCwd, model: draftModel, reasoning: draftEffort ?? undefined, memories: draftMem })
+      s = await window.desk.createSession({ cwd: draftCwd, model: draftModel, reasoning: draftEffort ?? undefined, mode: draftMode ?? undefined, memories: draftMem })
       setCurrent(s); currentRef.current = s
     }
     stick.current = true
@@ -195,6 +197,11 @@ export function App() {
     if (current) { await window.desk.setReasoning(current.id, e); setCurrent({ ...current, reasoning: e }) }
     else setDraftEffort(e)
   }
+  const mode: Mode = ((current ? current.mode : draftMode) as Mode) || defaultMode
+  const setMode = async (m: Mode) => {
+    if (current) { await window.desk.setMode(current.id, m); setCurrent({ ...current, mode: m }); if (m === 'autopilot') setPerms([]) }
+    else setDraftMode(m)
+  }
   const memories: string[] = current ? JSON.parse(current.memories || '[]') : draftMem
   const setMemories = async (paths: string[]) => {
     const uniq = [...new Set(paths)]
@@ -238,7 +245,7 @@ export function App() {
   const composer = (
     <Composer busy={busy} restore={restore} model={model} models={models} cwd={cwd} onModel={setModel}
       onPickFolder={current ? undefined : () => setFolderMenu(!folderMenu)} onSend={send} onStop={() => current && window.desk.stop(current.id)} autoFocus
-      effort={effort} onEffort={setEffort} memories={memories} onAddMemory={addMemory} onRemoveMemory={(m) => setMemories(memories.filter((x) => x !== m))}
+      effort={effort} onEffort={setEffort} mode={mode} onMode={setMode} memories={memories} onAddMemory={addMemory} onRemoveMemory={(m) => setMemories(memories.filter((x) => x !== m))}
       onShare={current && !busy ? async () => { await persistCurrent(); setSharing(current) } : undefined}
       tokens={current ? tokens : 0} onCompact={current && !busy ? () => openCompact(current) : undefined} />
   )
@@ -324,7 +331,7 @@ export function App() {
           </>
         )}
       </main>
-      {showSettings && <SettingsModal cwd={cwd} onClose={() => { setShowSettings(false); void refreshModels(); void window.desk.getSettings().then((s) => { setDefaultEffort(s.reasoning); setCompactCfg({ mode: s.autoCompact, threshold: s.compactThreshold, keep: s.compactKeepRecent }) }) }} />}
+      {showSettings && <SettingsModal cwd={cwd} onClose={() => { setShowSettings(false); void refreshModels(); void window.desk.getSettings().then((s) => { setDefaultEffort(s.reasoning); setDefaultMode(s.defaultMode); setCompactCfg({ mode: s.autoCompact, threshold: s.compactThreshold, keep: s.compactKeepRecent }) }) }} />}
       {compacting && <CompactModal session={compacting} keepRecentDefault={compactCfg.keep} onClose={() => setCompacting(null)}
         onDone={(m) => { setCompacting(null); flash(m) }} />}
       {toast && <div className="toast">{toast}</div>}

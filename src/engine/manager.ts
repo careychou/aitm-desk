@@ -1,6 +1,7 @@
 import type { Hooks, Message, ModelAdapter } from './types'
 import type { AgentInfo, AgentOps } from './tools/types'
 import type { Registry } from './registry/registry'
+import type { ShellManager } from './tools/shell'
 import { PermissionGate } from './permissions'
 import { Semaphore } from './semaphore'
 import { runLoop, AbortedError } from './loop'
@@ -25,6 +26,8 @@ export interface ManagerOptions {
   maxTurnsSub: number
   autoApprove?: boolean
   reasoning?: 'off' | 'low' | 'medium' | 'high'
+  shells?: ShellManager
+  stateDir?: string
 }
 
 let counter = 0
@@ -101,7 +104,7 @@ export class AgentManager implements AgentOps {
         info.finalText = await runLoop({
           agentId: id, model: this.o.model, adapter: this.o.adapter, sem: this.sem, hooks: this.o.hooks,
           tools, signal: controller.signal, maxTurns: this.o.maxTurnsSub, reasoning: this.o.reasoning,
-          ctx: { cwd: this.o.cwd, depth: opts.depth, hooks: this.o.hooks, gate: this.gate, registry: this.o.registry, agents: this },
+          ctx: { cwd: this.o.cwd, depth: opts.depth, hooks: this.o.hooks, gate: this.gate, registry: this.o.registry, agents: this, shells: this.o.shells, stateDir: this.o.stateDir },
           drainNotifications: () => this.drain(id)
         }, messages)
         info.status = 'completed'

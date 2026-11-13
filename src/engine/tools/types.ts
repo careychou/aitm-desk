@@ -1,6 +1,7 @@
 import type { Hooks, PermissionKind, AgentStatus } from '../types'
 import type { Registry } from '../registry/registry'
 import type { PermissionGate } from '../permissions'
+import type { ShellManager } from './shell'
 
 export interface AgentInfo { id: string; name: string; parentId: string | null; mode: 'main' | 'sync' | 'background'; status: AgentStatus; finalText: string }
 
@@ -20,6 +21,10 @@ export interface ToolContext {
   gate: PermissionGate
   registry: Registry
   agents: AgentOps
+  /** Background shells for this chat (mode "async"). */
+  shells?: ShellManager
+  /** Per-chat folder for scratch state such as the sql tool's database. */
+  stateDir?: string
 }
 
 export interface ToolDef {

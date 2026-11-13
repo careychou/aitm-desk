@@ -5,6 +5,10 @@ export class PermissionGate {
   private allowed = new Set<PermissionKind>()
   constructor(private hooks: Hooks, private autoApprove = false) {}
 
+  /** Autopilot: approve everything without asking. */
+  setAutoApprove(on: boolean) { this.autoApprove = on }
+  get isAutoApprove() { return this.autoApprove }
+
   async check(agentId: string, kind: PermissionKind, detail: string): Promise<boolean> {
     if (this.autoApprove || this.allowed.has(kind)) return true
     const d = await this.hooks.requestPermission({ agentId, kind, detail })

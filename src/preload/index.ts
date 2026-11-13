@@ -20,6 +20,7 @@ const api: DeskApi = {
   compact: inv('compact') as any,
   createSession: inv('createSession') as any,
   setReasoning: inv('setReasoning') as any,
+  setMode: inv('setMode') as any,
   setMemories: inv('setMemories') as any,
   pickMemories: inv('pickMemories') as any,
   saveExport: inv('saveExport') as any,

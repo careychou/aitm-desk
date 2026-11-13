@@ -64,3 +64,46 @@ describe('fs tools', () => {
     expect(r).toBe('src/y.ts:1:const foo = 2')
   })
 })
+
+describe('async shells', () => {
+  it('starts, reads, writes and stops a background shell', async () => {
+    const { ShellManager, shell: sh, readShell, writeShell, stopShell, listShells } = await import('../src/engine/tools/shell')
+    const shells = new ShellManager()
+    const c = { ...ctx, shells }
+    const first = await sh.run({ command: 'echo ready; while read l; do echo "got $l"; done', description: 'Echo loop', mode: 'async', initial_wait: 1 }, c)
+    expect(first).toContain('shellId: shell-1')
+    expect(first).toContain('ready')
+    expect(first).toContain('still running')
+    expect(await writeShell.run({ shellId: 'shell-1', input: 'ping\n', delay: 1 }, c)).toContain('got ping')
+    expect(await listShells.run({}, c)).toContain('running  Echo loop')
+    await stopShell.run({ shellId: 'shell-1' }, c)
+    expect(await readShell.run({ shellId: 'shell-1', delay: 3 }, c)).toMatch(/exited/)
+    shells.dispose()
+  })
+})
+
+describe('web_fetch', () => {
+  it('converts html to markdown', async () => {
+    const { htmlToMarkdown } = await import('../src/engine/tools/web')
+    const md = htmlToMarkdown('<html><head><title>T</title><script>x()</script></head><body><h2>Hi &amp; bye</h2><p>See <a href="/a">link</a></p><ul><li>one</li></ul></body></html>', 'https://e.com/x')
+    expect(md).toContain('# T')
+    expect(md).toContain('## Hi & bye')
+    expect(md).toContain('[link](https://e.com/a)')
+    expect(md).toContain('- one')
+    expect(md).not.toContain('x()')
+  })
+})
+
+describe('sql', () => {
+  it('uses a per-chat db with a todos table', async () => {
+    const { sql, closeSessionDb } = await import('../src/engine/tools/sql')
+    const stateDir = path.join(ctx.cwd, '.state')
+    const c = { ...ctx, stateDir }
+    expect(await sql.run({ query: "INSERT INTO todos (id, title) VALUES ('a', 'First'), ('b', 'Second')" }, c)).toContain('2 row(s)')
+    const out = await sql.run({ query: "SELECT id, status FROM todos ORDER BY id" }, c)
+    expect(out).toContain('| a | pending |')
+    expect(out).toContain('(2 rows)')
+    closeSessionDb(stateDir)
+    expect(fs.existsSync(path.join(stateDir, 'session.db'))).toBe(true)
+  })
+})

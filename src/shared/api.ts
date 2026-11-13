@@ -40,8 +40,9 @@ export interface DeskApi {
   removeBookmark(id: string): Promise<void>
   analyzeTurns(id: string): Promise<TurnAnalysis>
   compact(id: string, plan: { keep: number[]; summarize: number[] }): Promise<{ before: number; after: number; summarized: number; dropped: number }>
-  createSession(opts: { cwd: string; model: string; reasoning?: Settings['reasoning']; memories?: string[] }): Promise<SessionRow>
+  createSession(opts: { cwd: string; model: string; reasoning?: Settings['reasoning']; mode?: Settings['defaultMode']; memories?: string[] }): Promise<SessionRow>
   setReasoning(sessionId: string, r: Settings['reasoning']): Promise<void>
+  setMode(sessionId: string, m: Settings['defaultMode']): Promise<void>
   setMemories(sessionId: string, paths: string[]): Promise<void>
   pickMemories(): Promise<string[]>
   saveExport(name: string, markdown: string): Promise<string | null>

@@ -234,3 +234,15 @@ describe('sub-agents', () => {
     expect(leaf.tools!.map((t) => t.function.name)).not.toContain('task')
   })
 })
+
+describe('permission mode', () => {
+  it('autopilot skips prompts; interactive asks', async () => {
+    const { PermissionGate } = await import('../src/engine/permissions')
+    let asked = 0
+    const g = new PermissionGate({ onEvent() {}, requestPermission: async () => { asked++; return 'deny' }, askUser: async () => '' } as any, true)
+    expect(await g.check('main', 'shell', 'ls')).toBe(true)
+    g.setAutoApprove(false)
+    expect(await g.check('main', 'shell', 'ls')).toBe(false)
+    expect(asked).toBe(1)
+  })
+})

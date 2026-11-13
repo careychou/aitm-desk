@@ -79,6 +79,7 @@ pre, code { font-family: "SF Mono", Menlo, monospace; font-size: 12.5px; }
 .fbtn:disabled { cursor: default; }
 .effort-pick { border: 0; background: transparent; color: #3b434b; font: inherit; font-size: 13.5px; padding: 3px 6px; border-radius: 6px; }
 .effort-pick:hover { background: var(--hover); }
+.mode-pick.autopilot { color: #8250df; }
 .mem-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; padding: 2px 4px 2px 8px; border-radius: 999px; background: #e8eef9; color: #24427a; max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mem-chip button { color: #5b6f94; width: 16px; height: 16px; border-radius: 50%; line-height: 1; }
 .mem-chip button:hover { background: #d3dcef; }
@@ -129,14 +130,23 @@ pre, code { font-family: "SF Mono", Menlo, monospace; font-size: 12.5px; }
 .working { color: var(--muted); display: flex; align-items: center; gap: 8px; font-size: 13px; }
 
 /* tool + agent cards */
-.tool { border: 1px solid var(--line); border-radius: 8px; background: var(--card); font-size: 13px; }
+/* Copilot-style tool rows: quiet one-line descriptions that expand to the command and output */
+.tool, .tool-group { font-size: 13px; }
 .tool-head, .agent-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; text-align: left; }
-.tool-icon { width: 18px; text-align: center; color: var(--muted); }
-.tool-name { font-weight: 600; font-family: "SF Mono", Menlo, monospace; font-size: 12px; }
-.tool-sum, .agent-sum { flex: 1; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: "SF Mono", Menlo, monospace; font-size: 12px; }
-.tool.ok .tool-state { color: var(--ok); } .tool.fail .tool-state { color: var(--fail); }
-.tool-body { border-top: 1px solid var(--line); padding: 8px 10px; }
-.tool-body pre { margin: 4px 0 8px; max-height: 280px; overflow: auto; white-space: pre-wrap; word-break: break-word; background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+.tool .tool-head, .tool-group > .tool-head { padding: 3px 0; gap: 6px; color: var(--muted); }
+.tool .tool-head:hover, .tool-group > .tool-head:hover { color: var(--text); }
+.tool .chev, .tool-group .chev { width: 12px; text-align: center; flex: none; }
+.tool-sum { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tool-sum .muted { color: #8c959f; }
+.agent-sum { flex: 1; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: "SF Mono", Menlo, monospace; font-size: 12px; }
+.tool.running .tool-sum, .tool-group.running > .tool-head .tool-sum { color: var(--text); }
+.tool-x { color: var(--fail); font-size: 12px; flex: none; }
+.tool-group-body { margin-left: 5px; padding-left: 12px; border-left: 2px solid var(--line); }
+.tool-body { margin: 2px 0 6px 18px; }
+.term { margin: 0 0 6px; max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-word; background: #f6f8fa; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font-family: "SF Mono", Menlo, monospace; font-size: 12px; line-height: 1.5; color: #24292f; }
+.term-cmd { color: #0550ae; font-weight: 500; }
+.term.diff .del { color: #cf222e; } .term.diff .add { color: #116329; }
+.tool-out { max-height: 320px; overflow: auto; font-size: 12.5px; }
 .label { font-size: 11px; text-transform: uppercase; color: var(--muted); letter-spacing: .04em; }
 .agent { border: 1px solid #d0d7de; border-left: 3px solid var(--blue); border-radius: 8px; background: #fff; }
 .agent.completed { border-left-color: var(--ok); } .agent.failed, .agent.cancelled { border-left-color: var(--fail); }

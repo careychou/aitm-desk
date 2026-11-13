@@ -33,6 +33,12 @@ export function SettingsModal({ cwd, onClose }: { cwd: string; onClose(): void }
                 <option value="high">High — deeper, slower</option>
               </select>
             </label>
+            <label>Default mode for new chats (each chat can switch below its chat box)
+              <select value={s.defaultMode} onChange={(e) => set('defaultMode', e.target.value)}>
+                <option value="autopilot">Autopilot — run shell, file and web tools without asking</option>
+                <option value="interactive">Interactive — ask before shell, file writes and web fetches</option>
+              </select>
+            </label>
             <div className="row3">
               <label>Long chats
                 <select value={s.autoCompact} onChange={(e) => set('autoCompact', e.target.value)}>

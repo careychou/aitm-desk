@@ -7,11 +7,11 @@ export interface AskReq { requestId: string; agentId: string; question: string; 
 export function PermissionCard({ req, onDecide }: { req: PermissionReq; onDecide(d: PermissionDecision): void }) {
   return (
     <div className="prompt-card">
-      <div className="prompt-title">{req.kind === 'shell' ? 'Run this command?' : 'Allow this file change?'} {req.agentId !== 'main' && <span className="muted">· {req.agentId}</span>}</div>
+      <div className="prompt-title">{req.kind === 'shell' ? 'Run this command?' : req.kind === 'url' ? 'Fetch this URL?' : 'Allow this file change?'} {req.agentId !== 'main' && <span className="muted">· {req.agentId}</span>}</div>
       <pre>{req.detail}</pre>
       <div className="prompt-actions">
         <button className="primary" onClick={() => onDecide('allow')}>Allow</button>
-        <button onClick={() => onDecide('allow_session')}>Allow all {req.kind} this session</button>
+        <button onClick={() => onDecide('allow_session')}>Allow all {req.kind === 'url' ? 'web fetches' : req.kind} this session</button>
         <button className="danger" onClick={() => onDecide('deny')}>Deny</button>
       </div>
     </div>

@@ -25,13 +25,16 @@ let store: Store
 let settings: Settings
 const live = new Map<string, Session>()
 // open permission/ask prompts; Stop resolves a session's prompts with `cancel` so the run can unwind
-const pending = new Map<string, { sid: string; resolve: (v: any) => void; cancel: unknown }>()
+const pending = new Map<string, { sid: string; kind: 'permission' | 'ask'; resolve: (v: any) => void; cancel: unknown }>()
 
 const push = (e: PushEvent) => win?.webContents.send('push', e)
 const listing = () => ({ sessions: store.listSessions(), folders: store.listFolders(), bookmarks: store.listBookmarks() })
 const pushSessions = () => push({ type: 'sessions', ...listing() })
 type Effort = Settings['reasoning']
 const effortOf = (row: { reasoning?: string | null }): Effort => (row.reasoning as Effort) || settings.reasoning
+type Mode = Settings['defaultMode']
+const modeOf = (row: { mode?: string | null }): Mode => (row.mode as Mode) || settings.defaultMode
+const stateDirOf = (id: string) => path.join(dataHome, 'sessions', id)
 const memoriesOf = (row: { memories?: string | null }): string[] => { try { return JSON.parse(row.memories || '[]') } catch { return [] } }
 const sharesDir = () => path.join(app.getPath('documents'), BRAND.name, 'shares')
 const adapter = () => new OpenAIAdapter({
@@ -48,16 +51,17 @@ function getLive(id: string): Session {
   s = new Session({
     adapter: adapter(), cwd: row.cwd, model: row.model, history: store.loadMessages(id),
     maxConcurrency: settings.maxConcurrency, maxTurnsMain: settings.maxTurnsMain, maxTurnsSub: settings.maxTurnsSub, reasoning: effortOf(row), memories: memoriesOf(row),
+    autoApprove: modeOf(row) === 'autopilot', stateDir: stateDirOf(id),
     hooks: {
       onEvent: (event) => push({ type: 'agent', sessionId: id, event }),
       requestPermission: (r) => new Promise<PermissionDecision>((resolve) => {
         const requestId = randomUUID()
-        pending.set(requestId, { sid: id, resolve, cancel: 'deny' })
+        pending.set(requestId, { sid: id, kind: 'permission', resolve, cancel: 'deny' })
         push({ type: 'permission', sessionId: id, requestId, ...r })
       }),
       askUser: (r) => new Promise<string>((resolve) => {
         const requestId = randomUUID()
-        pending.set(requestId, { sid: id, resolve, cancel: '' })
+        pending.set(requestId, { sid: id, kind: 'ask', resolve, cancel: '' })
         push({ type: 'ask', sessionId: id, requestId, ...r })
       })
     }
@@ -139,7 +143,7 @@ function registerIpc() {
     const upto = map.filter((u) => u <= turn)
     const compacted = !!src.turn_map || !!src.compact_offset
     const row = { id: randomUUID(), title: `${src.title.replace(/^↳ /, '')} · fork`, cwd: src.cwd, model: src.model, created_at: now, updated_at: now, parent_id: id, fork_turn: turn,
-      reasoning: src.reasoning ?? null, memories: src.memories ?? null, turn_map: compacted ? JSON.stringify(upto) : null }
+      reasoning: src.reasoning ?? null, mode: src.mode ?? null, memories: src.memories ?? null, turn_map: compacted ? JSON.stringify(upto) : null }
     store.createSession(row)
     store.saveMessages(row.id, sliceMessagesAtTurn(msgs, upto.length - 1))
     store.saveUiItems(row.id, sliceItemsAtTurn(store.loadUiItems(id) as Array<{ t: string }>, turn))
@@ -151,15 +155,19 @@ function registerIpc() {
     const l = live.get(id)
     return { session, items: store.loadUiItems(id), busy: l?.isBusy ?? false, tokens: l ? l.tokenEstimate : estimateTokens(store.loadMessages(id)) }
   })
-  ipcMain.handle('createSession', (_e, o: { cwd: string; model: string; reasoning?: Effort; memories?: string[] }) => {
+  ipcMain.handle('createSession', (_e, o: { cwd: string; model: string; reasoning?: Effort; mode?: Mode; memories?: string[] }) => {
     const now = Date.now()
     const row = { id: randomUUID(), title: 'New chat', cwd: o.cwd, model: o.model, created_at: now, updated_at: now, parent_id: null, fork_turn: null,
-      reasoning: o.reasoning ?? null, memories: o.memories?.length ? JSON.stringify(o.memories) : null }
+      reasoning: o.reasoning ?? null, mode: o.mode ?? null, memories: o.memories?.length ? JSON.stringify(o.memories) : null }
     store.createSession(row)
     settings.defaultCwd = o.cwd; settings.defaultModel = o.model; saveSettings(settings)
     return row
   })
-  ipcMain.handle('deleteSession', (_e, id: string) => { live.get(id)?.stop(); live.delete(id); store.deleteSession(id); pushSessions() })
+  ipcMain.handle('deleteSession', (_e, id: string) => {
+    const l = live.get(id)
+    l?.stop(); l?.dispose(); live.delete(id); store.deleteSession(id); pushSessions()
+    fs.rmSync(stateDirOf(id), { recursive: true, force: true })
+  })
   ipcMain.handle('send', (_e, id: string, prompt: string, atts: Attachment[] = [], qid?: string) => {
     const row = store.getSession(id)
     const title = prompt.trim() || atts.map((a) => a.name).join(', ')
@@ -204,6 +212,11 @@ function registerIpc() {
     push({ type: 'busy', sessionId: id, busy: true })
     try { return await compactSession(id, plan) } finally { push({ type: 'busy', sessionId: id, busy: false }); pushSessions() }
   })
+  ipcMain.handle('setMode', (_e, id: string, m: Mode) => {
+    store.updateSession(id, { mode: m }); live.get(id)?.setMode(m)
+    // switching to autopilot approves whatever this chat is currently waiting on
+    if (m === 'autopilot') for (const [rid, p] of pending) if (p.sid === id && p.kind === 'permission') { pending.delete(rid); p.resolve('allow') }
+  })
   ipcMain.handle('setReasoning', (_e, id: string, r: Effort) => { store.updateSession(id, { reasoning: r }); live.get(id)?.setReasoning(r) })
   ipcMain.handle('setMemories', (_e, id: string, paths: string[]) => {
     store.updateSession(id, { memories: paths.length ? JSON.stringify(paths) : null }); live.get(id)?.setMemories(paths); pushSessions()
@@ -236,7 +249,13 @@ function registerIpc() {
   ipcMain.handle('getSettings', () => settings)
   ipcMain.handle('saveSettings', (_e, s: Settings) => {
     settings = s; saveSettings(s)
-    for (const [id, sess] of live) { if (!store.getSession(id)?.reasoning) sess.setReasoning(s.reasoning); if (!sess.isBusy) live.delete(id) }
+    for (const [id, sess] of live) {
+      const row = store.getSession(id)
+      if (!row?.reasoning) sess.setReasoning(s.reasoning)
+      if (!row?.mode) sess.setMode(s.defaultMode)
+      // idle chats are rebuilt with the new provider settings; keep ones with background shells alive
+      if (!sess.isBusy && !sess.shells.list().some((sh) => !sh.done)) { sess.dispose(); live.delete(id) }
+    }
   })
   ipcMain.handle('registryInfo', (_e, cwd: string) => {
     const r = loadRegistry({ cwd })
@@ -281,7 +300,9 @@ app.whenReady().then(() => {
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
 })
 
+app.on('before-quit', () => { for (const s of live.values()) s.dispose() })
+
 app.on('window-all-closed', () => {
-  for (const s of live.values()) s.stop()
+  for (const s of live.values()) { s.stop(); s.dispose() }
   if (process.platform !== 'darwin') app.quit()
 })
