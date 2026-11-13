@@ -67,7 +67,7 @@ describe('OpenAIAdapter', () => {
         res.write('data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}\n\n')
         res.write('data: {"choices":[{"index":0,"delta":{"reasoning_content":"hm"}}]}\n\n')
         res.write('data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"t1","type":"function","function":{"name":"shell","arguments":"{\\"command\\": \\"ls\\"}"}}]}}]}\n\n')
-        res.write('data: {"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":5,"completion_tokens":7}}\n\n')
+        res.write('data: {"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":5,"completion_tokens":7,"prompt_tokens_details":{"cached_tokens":3,"cache_write_tokens":1}}}\n\n')
         res.end('data: [DONE]\n\n')
       })
     })
@@ -79,7 +79,7 @@ describe('OpenAIAdapter', () => {
     expect(out).toContainEqual({ type: 'reasoning', text: 'hm' })
     expect(out).toContainEqual({ type: 'tool_call', index: 0, id: 't1', name: 'shell', args: '{"command": "ls"}' })
     expect(out).toContainEqual({ type: 'finish', reason: 'tool_calls' })
-    expect(out).toContainEqual({ type: 'usage', prompt: 5, completion: 7 })
+    expect(out).toContainEqual({ type: 'usage', prompt: 5, completion: 7, cached: 3, cacheWrite: 1 })
   })
 
   it('throws a readable error on 401', async () => {

@@ -41,6 +41,9 @@ const api: DeskApi = {
   listModels: inv('listModels') as any,
   pickFolder: inv('pickFolder') as any,
   getSettings: inv('getSettings') as any,
+  getUsage: inv('getUsage') as any,
+  getProjectUsage: inv('getProjectUsage') as any,
+  usageInfo: inv('usageInfo') as any,
   saveSettings: inv('saveSettings') as any,
   registryInfo: inv('registryInfo') as any,
   onPush(cb) {

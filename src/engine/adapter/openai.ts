@@ -57,7 +57,10 @@ export class OpenAIAdapter implements ModelAdapter {
       let j: any
       try { j = JSON.parse(data) } catch { continue }
       if (j.error) throw new Error(`upstream: ${j.error.message ?? JSON.stringify(j.error)}`)
-      if (j.usage) yield { type: 'usage', prompt: j.usage.prompt_tokens ?? 0, completion: j.usage.completion_tokens ?? 0 }
+      if (j.usage) {
+        const d = j.usage.prompt_tokens_details ?? {}
+        yield { type: 'usage', prompt: j.usage.prompt_tokens ?? 0, completion: j.usage.completion_tokens ?? 0, cached: d.cached_tokens ?? j.usage.cache_read_input_tokens ?? 0, cacheWrite: d.cache_write_tokens ?? j.usage.cache_creation_input_tokens ?? 0 }
+      }
       const ch = j.choices?.[0]
       if (!ch) continue
       const d = ch.delta ?? {}

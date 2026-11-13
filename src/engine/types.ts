@@ -16,7 +16,7 @@ export type Delta =
   | { type: 'text'; text: string }
   | { type: 'reasoning'; text: string }
   | { type: 'tool_call'; index: number; id?: string; name?: string; args?: string }
-  | { type: 'usage'; prompt: number; completion: number }
+  | { type: 'usage'; prompt: number; completion: number; cached?: number; cacheWrite?: number }
   | { type: 'finish'; reason: string }
 
 export interface ToolSchema {
@@ -48,7 +48,7 @@ export type AgentEvent =
   | { kind: 'tool_start'; agentId: string; callId: string; name: string; args: string }
   | { kind: 'tool_end'; agentId: string; callId: string; name: string; output: string; ok: boolean }
   | { kind: 'agent_end'; agentId: string; status: AgentStatus; finalText: string }
-  | { kind: 'usage'; agentId: string; prompt: number; completion: number }
+  | { kind: 'usage'; agentId: string; model?: string; prompt: number; completion: number; cached?: number; cacheWrite?: number }
   | { kind: 'error'; agentId: string; message: string }
   /** A prompt queued while the agent was working has just been added to the conversation. */
   | { kind: 'user_input'; agentId: string; qid: string }

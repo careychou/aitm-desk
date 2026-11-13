@@ -61,6 +61,12 @@ export function SettingsModal({ cwd, onClose }: { cwd: string; onClose(): void }
               <label>Re-send images from last N prompts<input type="number" min={0} max={50} value={s.imageTurns} onChange={(e) => set('imageTurns', Number(e.target.value))} title="Older images are replaced by a short note. 0 = always re-send all." /></label>
               <label>Max request size (MB)<input type="number" min={1} max={100} value={s.requestMaxMB} onChange={(e) => set('requestMaxMB', Number(e.target.value))} title="Oldest images are dropped first if a request would exceed this. Vertex rejects > 30 MB." /></label>
             </div>
+            <div className="sub-h">AI usage (⌘⇧U)</div>
+            <div className="row3">
+              <label>Daily budget (USD, 0 = off)<input type="number" min={0} step={5} value={s.dailyBudget} onChange={(e) => set('dailyBudget', Number(e.target.value))} title="Fills the usage ring in the sidebar against today's estimated spend." /></label>
+              <label>pricing.json<input value={s.pricingPath} placeholder="auto: ~/.aitm-desk or ~/heb-model-proxy" onChange={(e) => set('pricingPath', e.target.value)} /></label>
+              <label>Project usage command<input value={s.usageCommand} placeholder="auto: heb-llm-cost" onChange={(e) => set('usageCommand', e.target.value)} title="Must accept --days N --by model,day --json (heb-llm-cost contract)." /></label>
+            </div>
             <div className="row3">
               <label>Max concurrent model calls<input type="number" min={1} max={16} value={s.maxConcurrency} onChange={(e) => set('maxConcurrency', Number(e.target.value))} /></label>
               <label>Max turns (main)<input type="number" min={1} value={s.maxTurnsMain} onChange={(e) => set('maxTurnsMain', Number(e.target.value))} /></label>

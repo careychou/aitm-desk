@@ -15,6 +15,7 @@ import { BRAND } from '../shared/brand'
 import { insertBeforeTurn, liveTurnMap, orderRows, reorderIds, sliceItemsAtTurn, sliceMessagesAtTurn } from '../shared/fork'
 import { prepareAttachment, type AttachInput } from './attachments'
 import type { Attachment } from '../engine/content'
+import { getLocalUsage, getProjectUsage, loadPricing, usageCommand } from './usage'
 import { estimateTokens, keepLastPlan, splitHistoryTurns, type CompactPlan } from '../engine/compact'
 
 // GUI apps launched from Finder get a minimal PATH; give shell tools a usable one.
@@ -53,7 +54,13 @@ function getLive(id: string): Session {
     maxConcurrency: settings.maxConcurrency, maxTurnsMain: settings.maxTurnsMain, maxTurnsSub: settings.maxTurnsSub, reasoning: effortOf(row), memories: memoriesOf(row),
     autoApprove: modeOf(row) === 'autopilot', stateDir: stateDirOf(id),
     hooks: {
-      onEvent: (event) => push({ type: 'agent', sessionId: id, event }),
+      onEvent: (event) => {
+        if (event.kind === 'usage') {
+          try { store.addUsage({ ts: Date.now(), session_id: id, agent_id: event.agentId, model: event.model ?? row.model, prompt: event.prompt, cached: event.cached ?? 0, cache_write: event.cacheWrite ?? 0, completion: event.completion }) } catch { /* ledger is best-effort */ }
+          push({ type: 'usage' })
+        }
+        push({ type: 'agent', sessionId: id, event })
+      },
       requestPermission: (r) => new Promise<PermissionDecision>((resolve) => {
         const requestId = randomUUID()
         pending.set(requestId, { sid: id, kind: 'permission', resolve, cancel: 'deny' })
@@ -247,6 +254,9 @@ function registerIpc() {
     return r.canceled ? null : r.filePaths[0]
   })
   ipcMain.handle('getSettings', () => settings)
+  ipcMain.handle('getUsage', (_e, days: number) => getLocalUsage(store, days, settings.pricingPath, dataHome))
+  ipcMain.handle('getProjectUsage', (_e, days: number) => getProjectUsage(settings.usageCommand, days, settings.pricingPath, dataHome))
+  ipcMain.handle('usageInfo', () => ({ command: usageCommand(settings.usageCommand), pricing: loadPricing(settings.pricingPath, dataHome).path }))
   ipcMain.handle('saveSettings', (_e, s: Settings) => {
     settings = s; saveSettings(s)
     for (const [id, sess] of live) {

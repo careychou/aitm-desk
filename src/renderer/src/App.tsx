@@ -7,6 +7,7 @@ import { Composer, type Effort, type Mode } from './components/Composer'
 import { ShareModal } from './components/ShareModal'
 import { CompactModal } from './components/CompactModal'
 import { AskCard, PermissionCard, type AskReq, type PermissionReq } from './components/Prompts'
+import { UsageModal } from './components/UsageModal'
 import { SettingsModal } from './components/SettingsModal'
 import { Sidebar } from './components/Sidebar'
 import { BRAND } from '../../shared/brand'
@@ -49,12 +50,21 @@ export function App() {
   const [perms, setPerms] = useState<PermissionReq[]>([])
   const [asks, setAsks] = useState<AskReq[]>([])
   const [showSettings, setShowSettings] = useState(false)
+  const [showUsage, setShowUsage] = useState(false)
+  const [usage, setUsage] = useState<{ today: number | null; budget: number }>({ today: null, budget: 0 })
+  const refreshUsage = useCallback(async () => {
+    const [r, s] = await Promise.all([window.desk.getUsage(1), window.desk.getSettings()])
+    setUsage({ today: r.total.cost, budget: s.dailyBudget })
+  }, [])
   const [sidebar, setSidebar] = useState(() => localStorage.getItem('sidebar') !== '0')
   const [sideW, setSideW] = useState(() => Number(localStorage.getItem('sideW')) || SIDE_DEFAULT)
   const [resizing, setResizing] = useState(false)
   useEffect(() => { localStorage.setItem('sidebar', sidebar ? '1' : '0') }, [sidebar])
   useEffect(() => {
-    const key = (e: KeyboardEvent) => { if (e.metaKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b') { e.preventDefault(); setSidebar((v) => !v) } }
+    const key = (e: KeyboardEvent) => {
+      if (e.metaKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b') { e.preventDefault(); setSidebar((v) => !v) }
+      if (e.metaKey && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'u') { e.preventDefault(); setShowUsage((v) => !v) }
+    }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
   }, [])
@@ -94,7 +104,10 @@ export function App() {
     void window.desk.listSessions().then(applyListing)
     void window.desk.getSettings().then((s) => { setDraftModel(s.defaultModel); setDraftCwd(s.defaultCwd); setDefaultEffort(s.reasoning); setDefaultMode(s.defaultMode); setCompactCfg({ mode: s.autoCompact, threshold: s.compactThreshold, keep: s.compactKeepRecent }) })
     void refreshModels()
-    return window.desk.onPush((p: PushEvent) => {
+    void refreshUsage()
+    let usageTimer: ReturnType<typeof setTimeout> | undefined
+    const off = window.desk.onPush((p: PushEvent) => {
+      if (p.type === 'usage') { clearTimeout(usageTimer); usageTimer = setTimeout(() => void refreshUsage(), 800); return }
       if (p.type === 'sessions') { applyListing(p); return }
       if (p.type === 'busy') setBusyIds((prev) => { const n = new Set(prev); p.busy ? n.add(p.sessionId) : n.delete(p.sessionId); return n })
       const mine = p.sessionId === currentRef.current?.id
@@ -120,7 +133,8 @@ export function App() {
       } else if (p.type === 'permission') setPerms((x) => [...x, p])
       else if (p.type === 'ask') setAsks((x) => [...x, p])
     })
-  }, [refreshModels])
+    return () => { off(); clearTimeout(usageTimer) }
+  }, [refreshModels, refreshUsage])
 
   // skills/agents are discovered per working folder (folder .github + ~/.copilot)
   const cwd = current?.cwd ?? draftCwd
@@ -255,7 +269,7 @@ export function App() {
       <div className="side-slot" aria-hidden={!sidebar} inert={!sidebar || undefined}>
         <Sidebar folders={folders} sessions={sessions} bookmarks={bookmarks} onCompact={openCompact} currentId={current?.id ?? null} busyIds={busyIds}
           onOpen={open} onNewChat={newChat} onDelete={del} onAddFolder={addFolder} onRemoveFolder={removeFolder}
-          onCollapse={() => setSidebar(false)} onSettings={() => setShowSettings(true)}
+          onCollapse={() => setSidebar(false)} onSettings={() => setShowSettings(true)} onUsage={() => setShowUsage(true)} usage={usage}
           onShare={async (s) => { await persistCurrent(); setSharing(s) }} />
       </div>
       {sidebar && <div className="side-resize" style={{ left: sideW - 3 }} onMouseDown={startResize}
@@ -331,7 +345,8 @@ export function App() {
           </>
         )}
       </main>
-      {showSettings && <SettingsModal cwd={cwd} onClose={() => { setShowSettings(false); void refreshModels(); void window.desk.getSettings().then((s) => { setDefaultEffort(s.reasoning); setDefaultMode(s.defaultMode); setCompactCfg({ mode: s.autoCompact, threshold: s.compactThreshold, keep: s.compactKeepRecent }) }) }} />}
+      {showUsage && <UsageModal onClose={() => setShowUsage(false)} onOpenChat={(id) => void open(id)} />}
+      {showSettings && <SettingsModal cwd={cwd} onClose={() => { setShowSettings(false); void refreshModels(); void refreshUsage(); void window.desk.getSettings().then((s) => { setDefaultEffort(s.reasoning); setDefaultMode(s.defaultMode); setCompactCfg({ mode: s.autoCompact, threshold: s.compactThreshold, keep: s.compactKeepRecent }) }) }} />}
       {compacting && <CompactModal session={compacting} keepRecentDefault={compactCfg.keep} onClose={() => setCompacting(null)}
         onDone={(m) => { setCompacting(null); flash(m) }} />}
       {toast && <div className="toast">{toast}</div>}

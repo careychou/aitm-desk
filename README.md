@@ -60,14 +60,20 @@ On first launch open **⚙ Settings** and set your model endpoint's **Base URL**
 - **Attach exports as memory** — *＋ Memory* attaches one or more exported `.md` files to a chat; the agent starts with them as prior context. Great for handing work between sessions or people.
 - **Smart compaction**: *⇲ Compact* (which also shows the estimated context size) has two modes. **Keep the last N turns** word-for-word and summarize everything before them, or **Choose turns** and set each turn to **Keep · Summarize · Drop**. You can set a turn singly, or set a whole **related-topic cluster** at once (clusters can be non-adjacent when a long chat pivoted and came back). Kept turns can be anywhere in the chat, so an important early instruction stays verbatim. Forks made after a compaction still line up with the right turns. Long chats can be flagged or auto-compacted past a token threshold (Settings → *Long chats*).
 
+### AI usage
+- **AI usage panel (⌘⇧U)**: the ring button in the sidebar footer, next to ⚙, opens it. The ring fills against an optional **daily budget** and turns amber at 80% and red at 100%; it shows today's estimated spend.
+- **This app**: every model call this app makes, from the main agent and sub-agents, is recorded locally in `aitm.db` as it happens. Each record holds input, cached, cache-write and output tokens. The panel shows totals, cache-hit rate, a per-day chart, and breakdowns **by model** and **by chat** (click a chat to open it). Ranges: today, 7 days or 30 days.
+- **Cost estimate**: list prices come from a `pricing.json` (USD per 1M tokens, per model, with dated price changes). It is looked up in Settings, then `~/.aitm-desk/pricing.json`, then `~/heb-model-proxy/pricing.json`. Without one, the panel shows tokens only.
+- **Project tab (optional)**: shows usage for the whole project, covering every caller and not just this app, by running a command that follows the `--days N --by model,day --json` contract (e.g. a Cloud Monitoring cost script). Set the command in Settings → *AI usage*.
+
 ### Under the hood
 - Electron + React UI over a **headless TypeScript engine** (also usable from a CLI).
 - Sessions, forks and bookmarks are stored locally in SQLite (`node:sqlite`) at `~/.aitm-desk/aitm.db`, with settings in `~/.aitm-desk/settings.json`. Set `AITM_HOME` to use another folder. The API key is encrypted with the macOS Keychain (`safeStorage`). Builds before 0.3 kept these files in `~/Library/Application Support/aitm-desk/`; they are copied over on first launch and the originals are left in place as a backup.
-- No telemetry. The only network calls go to the model endpoint you configure.
+- No telemetry. The only network calls go to the model endpoint you configure (plus the optional project-usage command, if you set one).
 
 ## Model endpoint notes
 
-Any endpoint that speaks the OpenAI Chat Completions API with streaming + tools works. Defaults: `http://127.0.0.1:4141/v1` (override in Settings or with `AITM_BASE_URL` / `AITM_API_KEY`).
+Any endpoint that speaks the OpenAI Chat Completions API with streaming + tools works. For the usage panel, the endpoint should honor `stream_options.include_usage` (a final chunk with `usage`, optionally with `prompt_tokens_details.cached_tokens`). Defaults: `http://127.0.0.1:4141/v1` (override in Settings or with `AITM_BASE_URL` / `AITM_API_KEY`).
 
 For thinking blocks the app sends `reasoning_effort` and a non-standard `include_reasoning: true` hint. Models that already stream `reasoning_content` (DeepSeek, GLM, gpt-oss, Qwen…) just work. For Anthropic Claude behind an OpenAI-style proxy, the proxy must enable Claude's (adaptive, summarized) extended thinking and map it to `reasoning_content`.
 
@@ -99,7 +105,7 @@ src/cli/       terminal runner
 src/main/      Electron main: settings (safeStorage), SQLite store, IPC
 src/preload/   contextBridge API
 src/renderer/  React UI
-src/shared/    fork/tree, export helpers shared by main + renderer
+src/shared/    fork/tree, export and usage/pricing helpers shared by main + renderer
 docs/          design spec + implementation plan
 ```
 

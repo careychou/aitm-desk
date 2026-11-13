@@ -1,3 +1,4 @@
+import { UsageRing, fmtUsd } from './UsageModal'
 import { useRef, useState } from 'react'
 import type { BookmarkRow, FolderRow, SessionRow } from '../../../shared/api'
 import { buildTree, isWithin, type TreeNode } from '../../../shared/fork'
@@ -17,6 +18,8 @@ interface Props {
   onRemoveFolder(path: string): void
   onCollapse(): void
   onSettings(): void
+  onUsage(): void
+  usage: { today: number | null; budget: number }
   onShare(s: SessionRow): void
   onCompact(s: SessionRow): void
 }
@@ -267,6 +270,11 @@ export function Sidebar(p: Props) {
       </div>
       <div className="side-bottom">
         <span className="brand">{BRAND.logo && <img src={BRAND.logo} alt="" />}{BRAND.short}</span>
+        <button className="usage-btn" onClick={p.onUsage}
+          title={`AI usage (⌘⇧U)${p.usage.today !== null ? ` · today ${fmtUsd(p.usage.today)}${p.usage.budget ? ` of ${fmtUsd(p.usage.budget)}` : ''}` : ''}`}>
+          <UsageRing frac={p.usage.budget && p.usage.today !== null ? p.usage.today / p.usage.budget : null} />
+          {p.usage.today !== null && p.usage.today > 0 && <span>{fmtUsd(p.usage.today)}</span>}
+        </button>
         <button className="icon" title="Settings" onClick={p.onSettings}>⚙</button>
       </div>
       {menu && <Menu menu={menu} onClose={() => setMenu(null)} />}

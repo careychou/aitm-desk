@@ -1,3 +1,4 @@
+import type { UsageReport } from './usage'
 import type { AgentEvent, PermissionDecision, PermissionKind } from '../engine/types'
 import type { SessionRow, FolderRow, BookmarkRow } from '../main/store'
 import type { Settings } from '../main/settings'
@@ -22,6 +23,7 @@ export type PushEvent =
   | ({ type: 'sessions' } & Listing)
   | { type: 'compacted'; sessionId: string; item: CompactItem; beforeTurn: number }
   | { type: 'tokens'; sessionId: string; tokens: number }
+  | { type: 'usage' }
 
 export interface RegistryInfo { skills: Array<{ name: string; description: string; source: string }>; agents: Array<{ name: string; description: string; source: string }>; warnings: string[] }
 
@@ -66,6 +68,9 @@ export interface DeskApi {
   listModels(): Promise<{ models: string[]; error?: string }>
   pickFolder(): Promise<string | null>
   getSettings(): Promise<Settings>
+  getUsage(days: number): Promise<UsageReport>
+  getProjectUsage(days: number): Promise<UsageReport>
+  usageInfo(): Promise<{ command: string | null; pricing: string | null }>
   saveSettings(s: Settings): Promise<void>
   registryInfo(cwd: string): Promise<RegistryInfo>
   onPush(cb: (e: PushEvent) => void): () => void

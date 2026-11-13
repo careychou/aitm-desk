@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite'
 import type { Message } from '../engine/types'
 import { isWithin, reorderIds } from '../shared/fork'
 
+export interface UsageRec { ts: number; session_id: string; agent_id: string; model: string; prompt: number; cached: number; cache_write: number; completion: number }
 export interface SessionRow { id: string; title: string; cwd: string; model: string; created_at: number; updated_at: number; parent_id: string | null; fork_turn: number | null; reasoning?: string | null; mode?: string | null; memories?: string | null; sort_order?: number | null; compact_offset?: number | null; turn_map?: string | null }
 export interface FolderRow { path: string; added_at: number }
 /** A bookmark folder (id) or a pinned session (session_id), nested via parent_id (null = top of Bookmarks). */
@@ -32,6 +33,7 @@ export class Store {
     if (!cols.includes('compact_offset')) this.db.exec('ALTER TABLE sessions ADD COLUMN compact_offset INTEGER')
     if (!cols.includes('sort_order')) this.db.exec('ALTER TABLE sessions ADD COLUMN sort_order INTEGER')
     this.db.exec('CREATE TABLE IF NOT EXISTS bookmarks (id TEXT PRIMARY KEY, kind TEXT, name TEXT, session_id TEXT, parent_id TEXT, sort_order INTEGER, collapsed INTEGER DEFAULT 0)')
+    this.db.exec('CREATE TABLE IF NOT EXISTS usage (ts INTEGER, session_id TEXT, agent_id TEXT, model TEXT, prompt INTEGER, cached INTEGER, cache_write INTEGER, completion INTEGER); CREATE INDEX IF NOT EXISTS usage_ts ON usage(ts)')
     if (!cols.includes('mode')) this.db.exec('ALTER TABLE sessions ADD COLUMN mode TEXT')
     if (!cols.includes('memories')) this.db.exec('ALTER TABLE sessions ADD COLUMN memories TEXT')
     this.db.exec('INSERT OR IGNORE INTO folders (path, added_at) SELECT DISTINCT cwd, MIN(created_at) FROM sessions GROUP BY cwd')
@@ -46,6 +48,15 @@ export class Store {
   removeFolder(p: string) {
     for (const s of this.listSessions().filter((x) => x.cwd === p)) this.deleteSession(s.id)
     this.db.prepare('DELETE FROM folders WHERE path = ?').run(p)
+  }
+
+  addUsage(u: UsageRec) {
+    this.db.prepare('INSERT INTO usage (ts, session_id, agent_id, model, prompt, cached, cache_write, completion) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(u.ts, u.session_id, u.agent_id, u.model, u.prompt, u.cached, u.cache_write, u.completion)
+  }
+  /** Usage records since `ts`, with the chat title (null once the chat is deleted). */
+  usageSince(ts: number): Array<UsageRec & { title: string | null }> {
+    return this.db.prepare('SELECT u.*, s.title AS title FROM usage u LEFT JOIN sessions s ON s.id = u.session_id WHERE u.ts >= ? ORDER BY u.ts').all(ts) as any
   }
 
   listSessions(): SessionRow[] {
