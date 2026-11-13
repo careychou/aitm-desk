@@ -1,0 +1,59 @@
+import { useEffect, useRef, useState } from 'react'
+
+interface Props {
+  busy: boolean
+  model: string
+  models: string[]
+  cwd: string
+  onModel(m: string): void
+  onPickFolder?: () => void
+  onSend(text: string): void
+  onStop(): void
+  autoFocus?: boolean
+}
+
+const short = (m: string) => m.split('/').pop() ?? m
+const folderName = (p: string) => p.split('/').filter(Boolean).pop() ?? p
+
+export function Composer(p: Props) {
+  const [text, setText] = useState('')
+  const ta = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => { if (p.autoFocus) ta.current?.focus() }, [p.autoFocus])
+  useEffect(() => {
+    const el = ta.current
+    if (el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 260) + 'px' }
+  }, [text])
+
+  const submit = () => {
+    if (!text.trim() || p.busy) return
+    p.onSend(text.trim())
+    setText('')
+  }
+
+  return (
+    <div className="composer-wrap">
+      <div className="composer">
+        <textarea
+          ref={ta}
+          rows={1}
+          placeholder="Ask anything, or describe a task…"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit() } }}
+        />
+        <div className="composer-bar">
+          <select className="model-pick" value={p.model} onChange={(e) => p.onModel(e.target.value)} title={p.model}>
+            {(p.models.includes(p.model) ? p.models : [p.model, ...p.models]).map((m) => <option key={m} value={m}>{short(m)}</option>)}
+          </select>
+          <div className="spacer" />
+          {p.busy
+            ? <button className="send stop" onClick={p.onStop} title="Stop">■</button>
+            : <button className="send" onClick={submit} disabled={!text.trim()} title="Send">↑</button>}
+        </div>
+      </div>
+      <button className="folder" onClick={p.onPickFolder} disabled={!p.onPickFolder} title={p.cwd}>
+        <span>🗀</span> {folderName(p.cwd)}
+      </button>
+    </div>
+  )
+}
