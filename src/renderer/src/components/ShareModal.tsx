@@ -32,7 +32,7 @@ export function ShareModal({ session, onClose }: Props) {
     <div className="modal-bg" onClick={onClose}>
       <div className="modal share" onClick={(e) => e.stopPropagation()}>
         <h2>Share session</h2>
-        <p className="muted">Exports to a Markdown file. Anyone can read it, and any {BRAND.name} chat can attach it as <b>memory</b>.</p>
+        <p className="muted">Exports to a Markdown file. Anyone can read it, and any {BRAND.title} chat can attach it as <b>memory</b>.</p>
         <div className="seg">
           <button className={all ? 'on' : ''} onClick={() => setAll(true)}>All turns ({turns.length})</button>
           <button className={!all ? 'on' : ''} onClick={() => setAll(false)}>Select turns</button>

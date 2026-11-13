@@ -229,7 +229,7 @@ export function App() {
             <div className="suggestions wide">
               {SUGGESTIONS.map((s) => <button key={s} onClick={() => send(s)}>{s}</button>)}
             </div>
-            <div className="foot">{BRAND.name} uses AI. Check for mistakes.</div>
+            <div className="foot">{BRAND.title} uses AI. Check for mistakes.</div>
           </div>
         ) : (
           <>
