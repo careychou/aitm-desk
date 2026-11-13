@@ -15,6 +15,7 @@ export interface SessionOptions {
   maxTurnsMain?: number
   maxTurnsSub?: number
   autoApprove?: boolean
+  reasoning?: 'off' | 'low' | 'medium' | 'high'
   /** Prior conversation (without system message) to resume. */
   history?: Message[]
 }
@@ -32,7 +33,7 @@ export class Session {
     this.registry = loadRegistry({ cwd: o.cwd, home: o.home })
     this.manager = new AgentManager({
       adapter: o.adapter, hooks: o.hooks, registry: this.registry, cwd: o.cwd, model: o.model,
-      maxConcurrency: o.maxConcurrency ?? 4, maxTurnsSub: o.maxTurnsSub ?? 30, autoApprove: o.autoApprove
+      maxConcurrency: o.maxConcurrency ?? 4, maxTurnsSub: o.maxTurnsSub ?? 30, autoApprove: o.autoApprove, reasoning: o.reasoning ?? 'medium'
     })
     this.messages = [{ role: 'system', content: buildMainSystem(this.registry, o.cwd) }, ...(o.history ?? [])]
     this.manager.onBackgroundDone = (parentId) => {
@@ -46,6 +47,7 @@ export class Session {
   get isBusy() { return this.busy }
 
   setModel(model: string) { this.o.model = model; this.manager.o.model = model }
+  setReasoning(r: 'off' | 'low' | 'medium' | 'high') { this.o.reasoning = r; this.manager.o.reasoning = r }
 
   /** Sends a user prompt (or, with no prompt, just delivers pending notifications) and runs the main loop. */
   async send(prompt?: string): Promise<{ status: 'completed' | 'failed' | 'cancelled'; text: string }> {
@@ -58,7 +60,7 @@ export class Session {
     try {
       text = await runLoop({
         agentId: MAIN_ID, model: this.o.model, adapter: this.o.adapter, sem: this.manager.sem, hooks: this.o.hooks,
-        tools: selectTools(undefined, 0), signal: controller.signal, maxTurns: this.o.maxTurnsMain ?? 50,
+        tools: selectTools(undefined, 0), signal: controller.signal, maxTurns: this.o.maxTurnsMain ?? 50, reasoning: this.o.reasoning ?? 'medium',
         ctx: { cwd: this.o.cwd, depth: 0, hooks: this.o.hooks, gate: this.manager.gate, registry: this.registry, agents: this.manager },
         drainNotifications: () => this.manager.drain(MAIN_ID)
       }, this.messages)

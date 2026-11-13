@@ -27,6 +27,8 @@ export interface ChatRequest {
   messages: Message[]
   tools?: ToolSchema[]
   maxTokens?: number
+  /** Ask the provider to return the model's reasoning (include_reasoning + reasoning_effort). */
+  reasoning?: 'off' | 'low' | 'medium' | 'high'
 }
 
 export interface ModelAdapter {

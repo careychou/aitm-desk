@@ -13,6 +13,7 @@ A lightweight, Copilot-style macOS desktop agent for **your own models**. You ge
 - **Approval prompts** before shell commands and file writes (allow once, allow for the session, or deny).
 - **Working folders**: the sidebar groups chats by folder, Copilot-style. Choose the folder when you start a new chat. Skills and agents load from that folder's `.github/` plus `~/.copilot/`.
 - **Fork from any turn**: hover a turn and click *⑂ Fork from here*. You get a new chat with the history up to that point, filed under the chat it came from, and forks can be forked again.
+- **Model thinking**: a Copilot-style *Thinking / Thought* block that streams the model's reasoning, then collapses to a one-line peek. Set the level in Settings → *Show model thinking* (off / low / medium / high). The app sends `include_reasoning` and `reasoning_effort`, and reads `reasoning_content` / `reasoning`, inline `<think>` tags, and Gemini thought parts. For Claude, the proxy has to turn on Anthropic adaptive thinking with summarized display.
 - **Sessions** are saved in SQLite (`node:sqlite`) under `~/Library/Application Support/aitm-desk/`.
 
 ## Run

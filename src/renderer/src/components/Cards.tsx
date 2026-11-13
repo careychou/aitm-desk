@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Item } from '../state'
 import { Markdown } from '../Markdown'
 
@@ -37,12 +37,22 @@ export function ToolCard({ it }: { it: Extract<Item, { t: 'tool' }> }) {
 function prettyArgs(a: string) { try { return JSON.stringify(JSON.parse(a), null, 2) } catch { return a } }
 
 export function Reasoning({ text, live }: { text: string; live: boolean }) {
-  const [open, setOpen] = useState(false)
+  // Copilot-style: open while the model is thinking, collapse once it moves on; the user can toggle anytime
+  const [manual, setManual] = useState<boolean | null>(null)
+  const open = manual ?? live
+  const body = useRef<HTMLDivElement>(null)
+  useEffect(() => { if (live && body.current) body.current.scrollTop = body.current.scrollHeight }, [text, live])
   if (!text.trim()) return null
+  const firstLine = text.trim().split('\n')[0].replace(/[*#]/g, '').slice(0, 90)
   return (
-    <div className="reasoning">
-      <button onClick={() => setOpen(!open)}>{live ? 'Thinking…' : 'Thought process'} {open ? '▾' : '▸'}</button>
-      {open && <div className="reasoning-body">{text}</div>}
+    <div className={`reasoning ${live ? 'live' : ''}`}>
+      <button className="reasoning-head" onClick={() => setManual(!open)}>
+        <span className="chev">{open ? '▾' : '▸'}</span>
+        <span className="reasoning-label">{live ? 'Thinking' : 'Thought'}</span>
+        {live && <span className="dots"><i /><i /><i /></span>}
+        {!open && <span className="reasoning-peek">{firstLine}</span>}
+      </button>
+      {open && <div ref={body} className="reasoning-body"><Markdown text={text} /></div>}
     </div>
   )
 }
@@ -90,7 +100,7 @@ export function ItemList({ items, live, onFork }: { items: Item[]; live: boolean
           case 'assistant':
             return (
               <div className={`msg assistant ${it.agentId === 'main' ? '' : 'sub'}`}>
-                <Reasoning text={it.reasoning} live={live && isLast && !it.text} />
+                <Reasoning text={it.reasoning} live={live && isLast && !it.text && !it.closed} />
                 {it.text && <Markdown text={it.text} />}
               </div>
             )

@@ -89,3 +89,46 @@ describe('OpenAIAdapter', () => {
     srv.close()
   })
 })
+
+import { ThinkSplitter } from '../src/engine/adapter/openai'
+
+describe('ThinkSplitter', () => {
+  it('splits <think> blocks across chunk boundaries', () => {
+    const t = new ThinkSplitter()
+    const out = [...t.push('<thi'), ...t.push('nk>plan A</th'), ...t.push('ink>Answer'), ...t.flush()]
+    const join = (k: string) => out.filter((d) => d.type === k).map((d: any) => d.text).join('')
+    expect(join('reasoning')).toBe('plan A')
+    expect(join('text')).toBe('Answer')
+  })
+  it('passes plain text through, including a lone "<"', () => {
+    const t = new ThinkSplitter()
+    const out = [...t.push('a < b'), ...t.push(' ok'), ...t.flush()]
+    expect(out.map((d: any) => d.text).join('')).toBe('a < b ok')
+    expect(out.every((d) => d.type === 'text')).toBe(true)
+  })
+})
+
+describe('OpenAIAdapter reasoning', () => {
+  it('sends include_reasoning and routes Gemini thought chunks to reasoning', async () => {
+    let body: any
+    const srv = await server((req, res) => {
+      let b = ''
+      req.on('data', (c) => (b += c))
+      req.on('end', () => {
+        body = JSON.parse(b)
+        res.writeHead(200, { 'content-type': 'text/event-stream' })
+        res.write('data: {"choices":[{"index":0,"delta":{"content":"**Plan**","extra_content":{"google":{"thought":true}}}}]}\n\n')
+        res.write('data: {"choices":[{"index":0,"delta":{"content":"Done"},"finish_reason":"stop"}]}\n\n')
+        res.end('data: [DONE]\n\n')
+      })
+    })
+    const ad = new OpenAIAdapter({ baseUrl: srv.url, apiKey: 'k' })
+    const out: Delta[] = []
+    for await (const d of ad.stream({ model: 'm', messages: [], reasoning: 'high' }, new AbortController().signal)) out.push(d)
+    srv.close()
+    expect(body.include_reasoning).toBe(true)
+    expect(body.reasoning_effort).toBe('high')
+    expect(out).toContainEqual({ type: 'reasoning', text: '**Plan**\n\n' })
+    expect(out).toContainEqual({ type: 'text', text: 'Done' })
+  })
+})

@@ -32,7 +32,7 @@ function getLive(id: string): Session {
   if (!row) throw new Error(`no session ${id}`)
   s = new Session({
     adapter: adapter(), cwd: row.cwd, model: row.model, history: store.loadMessages(id),
-    maxConcurrency: settings.maxConcurrency, maxTurnsMain: settings.maxTurnsMain, maxTurnsSub: settings.maxTurnsSub,
+    maxConcurrency: settings.maxConcurrency, maxTurnsMain: settings.maxTurnsMain, maxTurnsSub: settings.maxTurnsSub, reasoning: settings.reasoning,
     hooks: {
       onEvent: (event) => push({ type: 'agent', sessionId: id, event }),
       requestPermission: (r) => new Promise<PermissionDecision>((resolve) => {
@@ -123,7 +123,7 @@ function registerIpc() {
   ipcMain.handle('getSettings', () => settings)
   ipcMain.handle('saveSettings', (_e, s: Settings) => {
     settings = s; saveSettings(s)
-    for (const [id, sess] of live) if (!sess.isBusy) live.delete(id)
+    for (const [id, sess] of live) { sess.setReasoning(s.reasoning); if (!sess.isBusy) live.delete(id) }
   })
   ipcMain.handle('registryInfo', (_e, cwd: string) => {
     const r = loadRegistry({ cwd })

@@ -33,6 +33,8 @@ export class OpenAIAdapter implements ModelAdapter {
       max_tokens: req.maxTokens ?? 16000
     }
     if (req.tools?.length) body.tools = req.tools
+    if (req.reasoning && req.reasoning !== 'off') { body.include_reasoning = true; body.reasoning_effort = req.reasoning }
+    const think = new ThinkSplitter()
     const res = await fetch(`${this.cfg.baseUrl.replace(/\/$/, '')}/chat/completions`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${this.cfg.apiKey}` },
@@ -54,11 +56,57 @@ export class OpenAIAdapter implements ModelAdapter {
       if (!ch) continue
       const d = ch.delta ?? {}
       if (d.reasoning_content) yield { type: 'reasoning', text: d.reasoning_content }
-      if (d.content) yield { type: 'text', text: d.content }
+      if (d.reasoning && typeof d.reasoning === 'string') yield { type: 'reasoning', text: d.reasoning }
+      if (d.content) {
+        // Gemini on Vertex flags thought chunks; other models may inline <think> tags
+        if (d.extra_content?.google?.thought) yield { type: 'reasoning', text: d.content + '\n\n' }
+        else yield* think.push(d.content)
+      }
       for (const tc of d.tool_calls ?? []) {
         yield { type: 'tool_call', index: tc.index ?? 0, id: tc.id, name: tc.function?.name, args: tc.function?.arguments }
       }
       if (ch.finish_reason) yield { type: 'finish', reason: ch.finish_reason }
     }
+    yield* think.flush()
+  }
+}
+
+/** Splits streamed text into reasoning (inside <think>…</think>) and visible text, across chunk boundaries. */
+export class ThinkSplitter {
+  private inThink = false
+  private buf = ''
+
+  push(chunk: string): Delta[] {
+    const out: Delta[] = []
+    this.buf += chunk
+    for (;;) {
+      const tag = this.inThink ? '</think>' : '<think>'
+      const i = this.buf.indexOf(tag)
+      if (i >= 0) {
+        if (i > 0) out.push(this.emit(this.buf.slice(0, i)))
+        this.buf = this.buf.slice(i + tag.length)
+        this.inThink = !this.inThink
+        continue
+      }
+      // hold back a possible partial tag at the end
+      let keep = 0
+      for (let k = Math.min(tag.length - 1, this.buf.length); k > 0; k--) {
+        if (tag.startsWith(this.buf.slice(-k))) { keep = k; break }
+      }
+      const text = this.buf.slice(0, this.buf.length - keep)
+      this.buf = this.buf.slice(this.buf.length - keep)
+      if (text) out.push(this.emit(text))
+      return out
+    }
+  }
+
+  flush(): Delta[] {
+    const out = this.buf ? [this.emit(this.buf)] : []
+    this.buf = ''
+    return out
+  }
+
+  private emit(text: string): Delta {
+    return this.inThink ? { type: 'reasoning', text } : { type: 'text', text }
   }
 }

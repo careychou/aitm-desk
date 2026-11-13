@@ -12,13 +12,14 @@ export interface Settings {
   maxConcurrency: number
   maxTurnsMain: number
   maxTurnsSub: number
+  reasoning: 'off' | 'low' | 'medium' | 'high'
 }
 
 const file = () => path.join(app.getPath('userData'), 'settings.json')
 
 export function loadSettings(): Settings {
   const d = defaultProvider()
-  const defaults: Settings = { baseUrl: d.baseUrl, apiKey: d.apiKey, defaultModel: 'anthropic/claude-sonnet-5', defaultCwd: os.homedir(), maxConcurrency: 4, maxTurnsMain: 50, maxTurnsSub: 30 }
+  const defaults: Settings = { baseUrl: d.baseUrl, apiKey: d.apiKey, defaultModel: 'anthropic/claude-sonnet-5', defaultCwd: os.homedir(), maxConcurrency: 4, maxTurnsMain: 50, maxTurnsSub: 30, reasoning: 'medium' }
   try {
     const raw = JSON.parse(fs.readFileSync(file(), 'utf8'))
     if (raw.apiKeyEnc && safeStorage.isEncryptionAvailable()) raw.apiKey = safeStorage.decryptString(Buffer.from(raw.apiKeyEnc, 'base64'))

@@ -37,6 +37,16 @@ function mk(script: Script, extra: Partial<ConstructorParameters<typeof Session>
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 describe('Session main loop', () => {
+  it('emits reasoning events unless reasoning is off', async () => {
+    const script = () => [{ type: 'reasoning', text: 'hmm' } as Delta, ...say('ok')]
+    const on = mk(script)
+    await on.s.send('go')
+    expect(on.events.some((e) => e.kind === 'reasoning')).toBe(true)
+    const off = mk(script, { reasoning: 'off' })
+    expect(await off.s.send('go')).toEqual({ status: 'completed', text: 'ok' })
+    expect(off.events.some((e) => e.kind === 'reasoning')).toBe(false)
+  })
+
   it('lists skills in the system prompt without bodies and loads a skill via tool', async () => {
     const { s, adapter } = mk((r) => toolResults(r).length ? say('done') : [call('c0', 'skill', { name: 'demo' }), { type: 'finish', reason: 'tool_calls' }])
     const res = await s.send('go')

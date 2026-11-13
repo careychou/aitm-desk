@@ -14,6 +14,7 @@ export interface LoopOptions {
   ctx: Omit<ToolContext, 'agentId' | 'signal'>
   signal: AbortSignal
   maxTurns: number
+  reasoning?: 'off' | 'low' | 'medium' | 'high'
   /** Returns pending notifications to inject before the next model call. */
   drainNotifications?: () => string[]
 }
@@ -28,10 +29,10 @@ async function callModel(o: LoopOptions, messages: Message[]): Promise<Extract<M
       const asm = new Assembler()
       let streamed = false
       try {
-        for await (const d of o.adapter.stream({ model: o.model, messages, tools: toSchemas(o.tools) }, o.signal)) {
+        for await (const d of o.adapter.stream({ model: o.model, messages, tools: toSchemas(o.tools), reasoning: o.reasoning }, o.signal)) {
           asm.push(d)
           if (d.type === 'text') { streamed = true; o.hooks.onEvent({ kind: 'text', agentId: o.agentId, text: d.text }) }
-          else if (d.type === 'reasoning') { streamed = true; o.hooks.onEvent({ kind: 'reasoning', agentId: o.agentId, text: d.text }) }
+          else if (d.type === 'reasoning') { streamed = true; if (o.reasoning !== 'off') o.hooks.onEvent({ kind: 'reasoning', agentId: o.agentId, text: d.text }) }
           else if (d.type === 'usage') o.hooks.onEvent({ kind: 'usage', agentId: o.agentId, prompt: d.prompt, completion: d.completion })
         }
         return asm.message()
