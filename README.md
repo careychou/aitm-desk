@@ -53,7 +53,7 @@ On first launch open **⚙ Settings** and set your model endpoint's **Base URL**
 
 ### Under the hood
 - Electron + React UI over a **headless TypeScript engine** (also usable from a CLI).
-- Sessions, forks, bookmarks stored locally in SQLite (`node:sqlite`) under `~/Library/Application Support/aitm-desk/`. API key encrypted with macOS Keychain (`safeStorage`).
+- Sessions, forks and bookmarks are stored locally in SQLite (`node:sqlite`) at `~/.aitm-desk/aitm.db`, with settings in `~/.aitm-desk/settings.json`. Set `AITM_HOME` to use another folder. The API key is encrypted with the macOS Keychain (`safeStorage`). Builds before 0.3 kept these files in `~/Library/Application Support/aitm-desk/`; they are copied over on first launch and the originals are left in place as a backup.
 - No telemetry. The only network calls go to the model endpoint you configure.
 
 ## Model endpoint notes

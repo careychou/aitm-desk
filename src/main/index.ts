@@ -4,7 +4,8 @@ import path from 'node:path'
 import os from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { Store } from './store'
-import { loadSettings, saveSettings, type Settings } from './settings'
+import { loadSettings, saveSettings, setSettingsDir, type Settings } from './settings'
+import { resolveDataHome, migrateDataHome } from './datahome'
 import { OpenAIAdapter } from '../engine/adapter/openai'
 import { Session } from '../engine/engine'
 import { loadRegistry } from '../engine/registry/registry'
@@ -242,13 +243,22 @@ function createWindow() {
   else void win.loadFile(path.join(__dirname, '../renderer/index.html'))
 }
 
-// Pin the data folder so a rename of the product keeps existing chats.
-app.setPath('userData', path.join(app.getPath('appData'), BRAND.dataDir))
+// Chromium's own caches stay in ~/Library/Application Support/<dataDir>; pinned so a product rename keeps them.
+const profileDir = app.commandLine.hasSwitch('user-data-dir') ? app.getPath('userData') : undefined
+const legacyDir = path.join(app.getPath('appData'), BRAND.dataDir)
+if (!profileDir) app.setPath('userData', legacyDir)
+// Chats + settings live in a plain dot-folder (default ~/.aitm-desk) so the CLI and agents can find them.
+const dataHome = resolveDataHome({ env: process.env, home: os.homedir(), profileDir })
 
 app.whenReady().then(() => {
   app.setName(BRAND.name)
+  if (!profileDir) {
+    try { const moved = migrateDataHome(legacyDir, dataHome); if (moved.length) console.log(`Copied ${moved.join(', ')} from ${legacyDir} to ${dataHome}`) }
+    catch (e) { console.error('Data migration failed; starting with the new folder', e) }
+  }
+  setSettingsDir(dataHome)
   settings = loadSettings()
-  store = new Store(app.getPath('userData'))
+  store = new Store(dataHome)
   registerIpc()
   createWindow()
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })

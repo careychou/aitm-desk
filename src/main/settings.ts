@@ -18,7 +18,10 @@ export interface Settings {
   compactKeepRecent: number
 }
 
-const file = () => path.join(app.getPath('userData'), 'settings.json')
+let dir = ''
+/** Must be called before load/save; points settings.json at the data home. */
+export function setSettingsDir(d: string): void { dir = d }
+const file = () => path.join(dir || app.getPath('userData'), 'settings.json')
 
 export function loadSettings(): Settings {
   const d = defaultProvider()

@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { Message } from '../engine/types'
@@ -12,6 +13,7 @@ export interface BookmarkRow { id: string; kind: 'folder' | 'pin'; name: string 
 export class Store {
   private db: DatabaseSync
   constructor(dir: string) {
+    fs.mkdirSync(dir, { recursive: true })
     this.db = new DatabaseSync(path.join(dir, 'aitm.db'))
     this.db.exec(`
       PRAGMA journal_mode = WAL;
