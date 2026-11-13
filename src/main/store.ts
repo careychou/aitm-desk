@@ -2,8 +2,10 @@ import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { Message } from '../engine/types'
 
-export interface SessionRow { id: string; title: string; cwd: string; model: string; created_at: number; updated_at: number; parent_id: string | null; fork_turn: number | null; reasoning?: string | null; memories?: string | null }
+export interface SessionRow { id: string; title: string; cwd: string; model: string; created_at: number; updated_at: number; parent_id: string | null; fork_turn: number | null; reasoning?: string | null; memories?: string | null; sort_order?: number | null; compact_offset?: number | null }
 export interface FolderRow { path: string; added_at: number }
+/** A bookmark folder (id) or a pinned session (session_id), nested via parent_id (null = top of Bookmarks). */
+export interface BookmarkRow { id: string; kind: 'folder' | 'pin'; name: string | null; session_id: string | null; parent_id: string | null; sort_order: number; collapsed: number }
 
 /** SQLite persistence for sessions, the main-agent message history, and UI event log. */
 export class Store {
@@ -23,6 +25,9 @@ export class Store {
     if (!cols.includes('parent_id')) this.db.exec('ALTER TABLE sessions ADD COLUMN parent_id TEXT')
     if (!cols.includes('fork_turn')) this.db.exec('ALTER TABLE sessions ADD COLUMN fork_turn INTEGER')
     if (!cols.includes('reasoning')) this.db.exec('ALTER TABLE sessions ADD COLUMN reasoning TEXT')
+    if (!cols.includes('compact_offset')) this.db.exec('ALTER TABLE sessions ADD COLUMN compact_offset INTEGER')
+    if (!cols.includes('sort_order')) this.db.exec('ALTER TABLE sessions ADD COLUMN sort_order INTEGER')
+    this.db.exec('CREATE TABLE IF NOT EXISTS bookmarks (id TEXT PRIMARY KEY, kind TEXT, name TEXT, session_id TEXT, parent_id TEXT, sort_order INTEGER, collapsed INTEGER DEFAULT 0)')
     if (!cols.includes('memories')) this.db.exec('ALTER TABLE sessions ADD COLUMN memories TEXT')
     this.db.exec('INSERT OR IGNORE INTO folders (path, added_at) SELECT DISTINCT cwd, MIN(created_at) FROM sessions GROUP BY cwd')
   }
@@ -45,10 +50,49 @@ export class Store {
     return this.db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as unknown as SessionRow | undefined
   }
   createSession(r: SessionRow) {
-    this.db.prepare('INSERT INTO sessions (id, title, cwd, model, created_at, updated_at, parent_id, fork_turn, reasoning, memories) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(r.id, r.title, r.cwd, r.model, r.created_at, r.updated_at, r.parent_id, r.fork_turn, r.reasoning ?? null, r.memories ?? null)
+    this.db.prepare('INSERT INTO sessions (id, title, cwd, model, created_at, updated_at, parent_id, fork_turn, reasoning, memories, compact_offset) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(r.id, r.title, r.cwd, r.model, r.created_at, r.updated_at, r.parent_id, r.fork_turn, r.reasoning ?? null, r.memories ?? null, r.compact_offset ?? null)
     this.addFolder(r.cwd)
   }
+  /** Persists a manual order for sibling sessions (index = position). Does not bump updated_at. */
+  setOrder(ids: string[]) {
+    const st = this.db.prepare('UPDATE sessions SET sort_order = ? WHERE id = ?')
+    ids.forEach((id, i) => st.run(i, id))
+  }
+
+  listBookmarks(): BookmarkRow[] {
+    return this.db.prepare('SELECT * FROM bookmarks ORDER BY sort_order').all() as unknown as BookmarkRow[]
+  }
+  private nextBookmarkOrder(parent: string | null) {
+    const r = this.db.prepare('SELECT MAX(sort_order) AS m FROM bookmarks WHERE parent_id IS ?').get(parent) as any
+    return (r?.m ?? -1) + 1
+  }
+  addBookmark(b: Omit<BookmarkRow, 'sort_order' | 'collapsed'>) {
+    if (b.kind === 'pin' && this.db.prepare("SELECT 1 FROM bookmarks WHERE kind = 'pin' AND session_id = ?").get(b.session_id)) return
+    this.db.prepare('INSERT INTO bookmarks (id, kind, name, session_id, parent_id, sort_order, collapsed) VALUES (?, ?, ?, ?, ?, ?, 0)')
+      .run(b.id, b.kind, b.name, b.session_id, b.parent_id, this.nextBookmarkOrder(b.parent_id))
+  }
+  updateBookmark(id: string, patch: Partial<Pick<BookmarkRow, 'name' | 'parent_id' | 'collapsed'>>) {
+    const cur = this.db.prepare('SELECT * FROM bookmarks WHERE id = ?').get(id) as unknown as BookmarkRow | undefined
+    if (!cur) return
+    const n = { ...cur, ...patch }
+    const order = patch.parent_id !== undefined && patch.parent_id !== cur.parent_id ? this.nextBookmarkOrder(n.parent_id) : cur.sort_order
+    this.db.prepare('UPDATE bookmarks SET name = ?, parent_id = ?, collapsed = ?, sort_order = ? WHERE id = ?').run(n.name, n.parent_id, n.collapsed, order, id)
+  }
+  setBookmarkOrder(ids: string[]) {
+    const st = this.db.prepare('UPDATE bookmarks SET sort_order = ? WHERE id = ?')
+    ids.forEach((id, i) => st.run(i, id))
+  }
+  /** Removes a bookmark; a folder's contents move up to its parent. */
+  removeBookmark(id: string) {
+    const cur = this.db.prepare('SELECT * FROM bookmarks WHERE id = ?').get(id) as unknown as BookmarkRow | undefined
+    if (!cur) return
+    this.db.prepare('UPDATE bookmarks SET parent_id = ? WHERE parent_id = ?').run(cur.parent_id, id)
+    this.db.prepare('DELETE FROM bookmarks WHERE id = ?').run(id)
+  }
+
+  setCompactOffset(id: string, n: number) { this.db.prepare('UPDATE sessions SET compact_offset = ? WHERE id = ?').run(n, id) }
+
   updateSession(id: string, patch: Partial<Pick<SessionRow, 'title' | 'model' | 'cwd' | 'reasoning' | 'memories'>>) {
     const cur = this.getSession(id)
     if (!cur) return
@@ -62,6 +106,7 @@ export class Store {
     this.db.prepare('UPDATE sessions SET parent_id = ? WHERE parent_id = ?').run(row?.parent_id ?? null, id)
     for (const t of ['messages', 'ui_items']) this.db.prepare(`DELETE FROM ${t} WHERE session_id = ?`).run(id)
     this.db.prepare('DELETE FROM sessions WHERE id = ?').run(id)
+    this.db.prepare("DELETE FROM bookmarks WHERE kind = 'pin' AND session_id = ?").run(id)
   }
 
   /** Replaces the stored main-agent history (system message excluded). */

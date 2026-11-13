@@ -207,3 +207,48 @@ button.danger { color: var(--fail); }
 .folder-menu button:hover, .folder-menu button.on { background: var(--hover); }
 .folder-menu .muted { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reg-line { color: var(--muted); font-size: 12.5px; margin-top: -8px; }
+
+/* sidebar: actions menu, rename, bookmarks */
+.session .more { visibility: hidden; color: var(--muted); width: 22px; height: 22px; border-radius: 5px; flex: none; margin-left: auto; }
+.session:hover .more, .session.on .more { visibility: visible; }
+.session .more:hover { background: #dfe2e6; }
+.inline-edit { flex: 1; min-width: 0; font: inherit; padding: 2px 6px; border: 1px solid var(--blue); border-radius: 5px; outline: none; background: #fff; }
+.folder-row.section { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 6px 10px; }
+.folder-row.section .folder-icon { color: #bf8700; }
+.session.pin .pin-mark { width: 14px; color: #bf8700; font-size: 12px; flex: none; text-align: center; }
+.session.pin .pin-folder { font-size: 11px; color: var(--muted); background: #eceef1; padding: 0 6px; border-radius: 4px; flex: none; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session.bm-folder .folder-icon { font-size: 14px; }
+.side-divider { height: 1px; background: var(--line); margin: 6px 10px 10px; }
+.menu-back { position: fixed; inset: 0; z-index: 20; }
+.menu { position: fixed; min-width: 210px; max-width: 280px; background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 28px rgba(0,0,0,.16); padding: 5px; }
+.menu button { display: block; width: 100%; text-align: left; padding: 6px 10px; border-radius: 6px; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.menu button:hover:not(:disabled) { background: var(--hover); }
+.menu button:disabled { color: var(--muted); cursor: default; }
+.menu button.danger { color: var(--fail); }
+.menu-sep { height: 1px; background: var(--line); margin: 4px 6px; }
+
+/* compaction */
+.compact .compact-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 13.5px; margin-bottom: 10px; flex-wrap: wrap; }
+.compact .keep { display: flex; align-items: center; gap: 6px; }
+.compact .keep input { width: 54px; padding: 3px 6px; border: 1px solid #d0d7de; border-radius: 6px; font: inherit; }
+.turn-pick-bar.plain { border: 0; padding: 0 0 8px; position: static; }
+.seg.small { margin: 0 auto 0 0; }
+.modal .seg.small button { padding: 4px 10px; font-size: 13px; }
+.turn-pick.tall { max-height: 46vh; }
+.turn-tok { margin-left: auto; color: var(--muted); font-size: 12px; flex: none; padding-left: 8px; }
+.turn-row.recent { opacity: .55; cursor: default; }
+.cluster { border-bottom: 1px solid #f0f2f4; }
+.cluster-head { display: flex; align-items: center; gap: 10px; padding: 8px 10px; }
+.modal .cluster-title { border: 0; padding: 0; background: none; text-align: left; display: flex; gap: 6px; align-items: baseline; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13.5px; }
+.modal .cluster-title:hover { background: none; text-decoration: underline; }
+.cluster-reason { font-size: 12.5px; padding: 0 10px 8px 36px; margin-top: -4px; }
+.cluster-turns { padding-left: 22px; background: #fafbfc; }
+.recent-head { font-size: 12px; padding: 8px 10px 2px; text-transform: uppercase; letter-spacing: .04em; }
+.compact-sum { font-size: 13.5px; margin: 0 0 12px; }
+.compact-banner { max-width: 860px; margin: 0 auto 8px; display: flex; gap: 10px; align-items: center; font-size: 13px; background: #fff8e5; border: 1px solid #f0d78c; color: #6b5200; padding: 7px 12px; border-radius: 8px; }
+.compact-banner button { margin-left: auto; border: 1px solid #d4b75c; background: #fff; padding: 3px 10px; border-radius: 6px; flex: none; }
+.compact-marker > button { display: flex; align-items: center; gap: 10px; width: 100%; color: var(--muted); font-size: 12.5px; padding: 4px 0; }
+.compact-marker .line { flex: 1; height: 1px; background: var(--line); }
+.compact-marker .lbl { flex: none; }
+.compact-summary { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin-top: 6px; font-size: 14px; }
+.toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1f2328; color: #fff; padding: 9px 16px; border-radius: 8px; font-size: 13.5px; z-index: 30; box-shadow: 0 6px 20px rgba(0,0,0,.2); }

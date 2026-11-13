@@ -4,6 +4,7 @@ import { AgentManager } from './manager'
 import { runLoop, AbortedError } from './loop'
 import { selectTools } from './tools'
 import { buildMainSystem } from './prompt'
+import { applyCompaction, clusterTurns, estimateTokens, planTurns, priorSummary, splitHistoryTurns, summarizeTurns, type CompactPlan } from './compact'
 
 export interface SessionOptions {
   adapter: ModelAdapter
@@ -91,4 +92,33 @@ export class Session {
   }
 
   stop() { this.manager.cancelAll() }
+
+  get history(): Message[] { return this.messages.slice(1) }
+  get tokenEstimate() { return estimateTokens(this.messages) }
+
+  /** Turn digests plus topic clusters for the compaction picker. */
+  async analyzeTurns(signal?: AbortSignal) {
+    const turns = splitHistoryTurns(this.history)
+    const { clusters, method } = await clusterTurns(this.o.adapter, this.o.model, turns, signal)
+    return {
+      turns: turns.map((t) => ({ index: t.index, user: t.user, answer: t.answer, tools: t.tools, tokens: estimateTokens(t.messages) })),
+      clusters, method, hasPriorSummary: !!priorSummary(this.history), tokens: this.tokenEstimate
+    }
+  }
+
+  /** Summarizes the chosen older turns, drops the other older turns, keeps the last `keepRecent` verbatim. */
+  async compact(plan: CompactPlan, signal?: AbortSignal) {
+    if (this.busy) throw new Error('session is busy')
+    this.busy = true
+    try {
+      const before = this.tokenEstimate
+      const turns = splitHistoryTurns(this.history)
+      const { older, summarized, dropped } = planTurns(turns, plan)
+      if (!older.length) return { before, after: before, summarized: 0, dropped: 0, summary: '' }
+      const summary = await summarizeTurns(this.o.adapter, this.o.model, summarized, priorSummary(this.history), signal)
+      const next = applyCompaction(this.history, summary, plan.keepRecent)
+      this.messages.splice(1, this.messages.length - 1, ...next)
+      return { before, after: this.tokenEstimate, summarized: summarized.length, dropped: dropped.length, summary }
+    } finally { this.busy = false }
+  }
 }

@@ -34,6 +34,17 @@ export function SettingsModal({ cwd, onClose }: { cwd: string; onClose(): void }
               </select>
             </label>
             <div className="row3">
+              <label>Long chats
+                <select value={s.autoCompact} onChange={(e) => set('autoCompact', e.target.value)}>
+                  <option value="off">Do nothing</option>
+                  <option value="suggest">Suggest compacting</option>
+                  <option value="auto">Auto-compact all turns</option>
+                </select>
+              </label>
+              <label>Threshold (tokens)<input type="number" min={5000} step={5000} value={s.compactThreshold} onChange={(e) => set('compactThreshold', Number(e.target.value))} /></label>
+              <label>Keep last N turns verbatim<input type="number" min={0} max={20} value={s.compactKeepRecent} onChange={(e) => set('compactKeepRecent', Number(e.target.value))} /></label>
+            </div>
+            <div className="row3">
               <label>Max concurrent model calls<input type="number" min={1} max={16} value={s.maxConcurrency} onChange={(e) => set('maxConcurrency', Number(e.target.value))} /></label>
               <label>Max turns (main)<input type="number" min={1} value={s.maxTurnsMain} onChange={(e) => set('maxTurnsMain', Number(e.target.value))} /></label>
               <label>Max turns (sub-agent)<input type="number" min={1} value={s.maxTurnsSub} onChange={(e) => set('maxTurnsSub', Number(e.target.value))} /></label>

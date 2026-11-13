@@ -79,6 +79,19 @@ export function AgentCard({ it }: { it: Extract<Item, { t: 'agent' }> }) {
   )
 }
 
+function CompactMarker({ it }: { it: Extract<Item, { t: 'compact' }> }) {
+  const [open, setOpen] = useState(false)
+  const k = (n: number) => `${Math.round(n / 1000)}k`
+  return (
+    <div className="compact-marker">
+      <button onClick={() => setOpen(!open)}>
+        <span className="line" /><span className="lbl">⇲ {it.auto ? 'Auto-compacted' : 'Compacted'}: {it.summarized} turn(s) summarized{it.dropped ? `, ${it.dropped} dropped` : ''} · ~{k(it.before)} → ~{k(it.after)} tokens {open ? '▾' : '▸'}</span><span className="line" />
+      </button>
+      {open && <div className="compact-summary"><div className="muted">The agent now remembers everything above as this summary:</div><Markdown text={it.summary} /></div>}
+    </div>
+  )
+}
+
 export function ItemList({ items, live, onFork }: { items: Item[]; live: boolean; onFork?: (turn: number) => void }) {
   let turn = -1
   // the fork button for turn N sits at the end of turn N (just before the next user message, or at the end)
@@ -107,6 +120,7 @@ export function ItemList({ items, live, onFork }: { items: Item[]; live: boolean
           case 'tool': return <ToolCard it={it} />
           case 'agent': return <AgentCard it={it} />
           case 'error': return <div className="err">{it.text}</div>
+          case 'compact': return <CompactMarker it={it} />
         } })()
         return <div key={i} className="item">{el}{forkBtn}</div>
       })}

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { FolderRow, PushEvent, RegistryInfo, SessionRow } from '../../shared/api'
+import type { BookmarkRow, FolderRow, Listing, PushEvent, RegistryInfo, SessionRow } from '../../shared/api'
+import { insertBeforeTurn } from '../../shared/fork'
 import { applyEvent, runningBackground, settle, type Item } from './state'
 import { ItemList } from './components/Cards'
 import { Composer, type Effort } from './components/Composer'
 import { ShareModal } from './components/ShareModal'
+import { CompactModal } from './components/CompactModal'
 import { AskCard, PermissionCard, type AskReq, type PermissionReq } from './components/Prompts'
 import { SettingsModal } from './components/SettingsModal'
 import { Sidebar } from './components/Sidebar'
@@ -18,6 +20,11 @@ const base = (p: string) => p.split('/').filter(Boolean).pop() ?? p
 export function App() {
   const [sessions, setSessions] = useState<SessionRow[]>([])
   const [folders, setFolders] = useState<FolderRow[]>([])
+  const [bookmarks, setBookmarks] = useState<BookmarkRow[]>([])
+  const [compacting, setCompacting] = useState<SessionRow | null>(null)
+  const [tokens, setTokens] = useState(0)
+  const [compactCfg, setCompactCfg] = useState({ mode: 'suggest', threshold: 80000, keep: 2 })
+  const [toast, setToast] = useState('')
   const [current, setCurrent] = useState<SessionRow | null>(null)
   const [items, setItems] = useState<Item[]>([])
   const [busy, setBusy] = useState(false)
@@ -43,8 +50,8 @@ export function App() {
   currentRef.current = current
   itemsRef.current = items
 
-  const applyListing = (l: { sessions: SessionRow[]; folders: FolderRow[] }) => {
-    setSessions(l.sessions); setFolders(l.folders)
+  const applyListing = (l: Listing) => {
+    setSessions(l.sessions); setFolders(l.folders); setBookmarks(l.bookmarks ?? [])
     const cur = currentRef.current
     if (cur) {
       const fresh = l.sessions.find((s) => s.id === cur.id)
@@ -59,12 +66,14 @@ export function App() {
 
   useEffect(() => {
     void window.desk.listSessions().then(applyListing)
-    void window.desk.getSettings().then((s) => { setDraftModel(s.defaultModel); setDraftCwd(s.defaultCwd); setDefaultEffort(s.reasoning) })
+    void window.desk.getSettings().then((s) => { setDraftModel(s.defaultModel); setDraftCwd(s.defaultCwd); setDefaultEffort(s.reasoning); setCompactCfg({ mode: s.autoCompact, threshold: s.compactThreshold, keep: s.compactKeepRecent }) })
     void refreshModels()
     return window.desk.onPush((p: PushEvent) => {
       if (p.type === 'sessions') { applyListing(p); return }
       if (p.type === 'busy') setBusyIds((prev) => { const n = new Set(prev); p.busy ? n.add(p.sessionId) : n.delete(p.sessionId); return n })
       if (p.sessionId !== currentRef.current?.id) return
+      if (p.type === 'tokens') { setTokens(p.tokens); return }
+      if (p.type === 'compacted') { setItems((prev) => insertBeforeTurn(prev, p.item as unknown as Item, p.beforeTurn)); return }
       if (p.type === 'agent') setItems((prev) => applyEvent(prev, p.event))
       else if (p.type === 'busy') {
         setBusy(p.busy)
@@ -91,14 +100,14 @@ export function App() {
     if (id === current?.id) return
     await persistCurrent()
     const r = await window.desk.openSession(id)
-    setCurrent(r.session); setItems(r.busy ? (r.items as Item[]) : settle(r.items as Item[])); setBusy(r.busy); setPerms([]); setAsks([])
+    setCurrent(r.session); setItems(r.busy ? (r.items as Item[]) : settle(r.items as Item[])); setBusy(r.busy); setPerms([]); setAsks([]); setTokens(r.tokens)
     stick.current = true
   }
 
   const newChat = async (folder: string) => {
     await persistCurrent()
     if (folder) setDraftCwd(folder)
-    setCurrent(null); setItems([]); setBusy(false); setPerms([]); setAsks([]); setFolderMenu(false); setDraftEffort(null); setDraftMem([])
+    setCurrent(null); setItems([]); setBusy(false); setPerms([]); setAsks([]); setFolderMenu(false); setDraftEffort(null); setDraftMem([]); setTokens(0)
   }
 
   const send = async (text: string) => {
@@ -138,6 +147,15 @@ export function App() {
   }
   const addMemory = async () => { const p = await window.desk.pickMemories(); if (p.length) await setMemories([...memories, ...p]) }
 
+  const openCompact = async (s: SessionRow) => {
+    if (busyIds.has(s.id)) { flash('Wait for this chat to finish before compacting.'); return }
+    await persistCurrent()
+    if (s.id !== current?.id) await open(s.id)
+    setCompacting(s)
+  }
+  const flash = (m: string) => { setToast(m); setTimeout(() => setToast(''), 5000) }
+  const overThreshold = !!current && compactCfg.mode !== 'off' && tokens > compactCfg.threshold
+
   const addFolder = async () => {
     const f = await window.desk.addFolder()
     if (f) await newChat(f)
@@ -165,13 +183,14 @@ export function App() {
     <Composer busy={busy} model={model} models={models} cwd={cwd} onModel={setModel}
       onPickFolder={current ? undefined : () => setFolderMenu(!folderMenu)} onSend={send} onStop={() => current && window.desk.stop(current.id)} autoFocus
       effort={effort} onEffort={setEffort} memories={memories} onAddMemory={addMemory} onRemoveMemory={(m) => setMemories(memories.filter((x) => x !== m))}
-      onShare={current && !busy ? async () => { await persistCurrent(); setSharing(current) } : undefined} />
+      onShare={current && !busy ? async () => { await persistCurrent(); setSharing(current) } : undefined}
+      tokens={current ? tokens : 0} onCompact={current && !busy ? () => openCompact(current) : undefined} />
   )
 
   return (
     <div className={`app ${sidebar ? '' : 'nosidebar'}`}>
       {sidebar && (
-        <Sidebar folders={folders} sessions={sessions} currentId={current?.id ?? null} busyIds={busyIds}
+        <Sidebar folders={folders} sessions={sessions} bookmarks={bookmarks} onCompact={openCompact} currentId={current?.id ?? null} busyIds={busyIds}
           onOpen={open} onNewChat={newChat} onDelete={del} onAddFolder={addFolder} onRemoveFolder={removeFolder}
           onCollapse={() => setSidebar(false)} onSettings={() => setShowSettings(true)}
           onShare={async (s) => { await persistCurrent(); setSharing(s) }} />
@@ -222,13 +241,22 @@ export function App() {
               </div>
             </div>
             <div className="bottom">
+              {overThreshold && !busy && (
+                <div className="compact-banner">
+                  This chat is long (~{Math.round(tokens / 1000)}k tokens).{compactCfg.mode === 'auto' ? ' It will be auto-compacted before your next message, or' : ''} Compact it to keep the agent focused and fast.
+                  <button onClick={() => current && openCompact(current)}>Choose turns…</button>
+                </div>
+              )}
               {bg.length > 0 && <div className="tray">{bg.map((a) => <span key={a.agentId} className="chip"><span className="spinner" /> {a.name} · {a.agentId}</span>)}</div>}
               {composer}
             </div>
           </>
         )}
       </main>
-      {showSettings && <SettingsModal cwd={cwd} onClose={() => { setShowSettings(false); void refreshModels(); void window.desk.getSettings().then((s) => setDefaultEffort(s.reasoning)) }} />}
+      {showSettings && <SettingsModal cwd={cwd} onClose={() => { setShowSettings(false); void refreshModels(); void window.desk.getSettings().then((s) => { setDefaultEffort(s.reasoning); setCompactCfg({ mode: s.autoCompact, threshold: s.compactThreshold, keep: s.compactKeepRecent }) }) }} />}
+      {compacting && <CompactModal session={compacting} keepRecentDefault={compactCfg.keep} onClose={() => setCompacting(null)}
+        onDone={(m) => { setCompacting(null); flash(m) }} />}
+      {toast && <div className="toast">{toast}</div>}
       {sharing && <ShareModal session={sharing} onClose={() => setSharing(null)} />}
     </div>
   )

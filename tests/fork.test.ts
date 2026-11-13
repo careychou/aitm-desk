@@ -35,3 +35,20 @@ describe('buildTree', () => {
     expect(t[0].children[0].children[0].row.id).toBe('c')
   })
 })
+
+import { orderRows, moveInOrder, insertBeforeTurn } from '../src/shared/fork'
+describe('ordering', () => {
+  const rows = [{ id: 'a', updated_at: 1, sort_order: null }, { id: 'b', updated_at: 3, sort_order: null }, { id: 'c', updated_at: 9, sort_order: 0 }, { id: 'd', updated_at: 2, sort_order: 1 }]
+  it('puts un-arranged rows first (newest first) then manual order', () => {
+    expect(orderRows(rows).map((r) => r.id)).toEqual(['b', 'a', 'c', 'd'])
+  })
+  it('moves within siblings and refuses past the ends', () => {
+    expect(moveInOrder(rows, 'c', -1)).toEqual(['b', 'c', 'a', 'd'])
+    expect(moveInOrder(rows, 'b', -1)).toBeNull()
+    expect(moveInOrder(rows, 'd', 1)).toBeNull()
+  })
+  it('inserts an item before a given UI turn', () => {
+    const items = [{ t: 'user' }, { t: 'assistant' }, { t: 'user' }, { t: 'assistant' }]
+    expect(insertBeforeTurn(items, { t: 'x' }, 1).map((i) => i.t)).toEqual(['user', 'assistant', 'x', 'user', 'assistant'])
+  })
+})

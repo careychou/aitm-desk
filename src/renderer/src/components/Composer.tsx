@@ -16,6 +16,8 @@ interface Props {
   onAddMemory(): void
   onRemoveMemory(path: string): void
   onShare?: () => void
+  tokens?: number
+  onCompact?: () => void
 }
 
 export type Effort = 'off' | 'low' | 'medium' | 'high'
@@ -73,6 +75,7 @@ export function Composer(p: Props) {
         ))}
         <button className="fbtn" onClick={p.onAddMemory} title="Attach a shared session export as prior memory">＋ Memory</button>
         <div className="spacer" />
+        {p.onCompact && <button className="fbtn" onClick={p.onCompact} title="Context size (estimated). Click to compact history: choose which turns to summarize.">⇲ {p.tokens ? `${Math.round(p.tokens / 1000)}k` : ''} Compact</button>}
         {p.onShare && <button className="fbtn" onClick={p.onShare} title="Export this chat to Markdown">⇪ Share</button>}
       </div>
     </div>
