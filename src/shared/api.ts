@@ -1,8 +1,8 @@
 import type { AgentEvent, PermissionDecision, PermissionKind } from '../engine/types'
-import type { SessionRow } from '../main/store'
+import type { SessionRow, FolderRow } from '../main/store'
 import type { Settings } from '../main/settings'
 
-export type { AgentEvent, SessionRow, Settings, PermissionDecision }
+export type { AgentEvent, SessionRow, FolderRow, Settings, PermissionDecision }
 
 /** Messages pushed from main to renderer. */
 export type PushEvent =
@@ -10,12 +10,15 @@ export type PushEvent =
   | { type: 'permission'; sessionId: string; requestId: string; agentId: string; kind: PermissionKind; detail: string }
   | { type: 'ask'; sessionId: string; requestId: string; agentId: string; question: string; choices?: string[] }
   | { type: 'busy'; sessionId: string; busy: boolean }
-  | { type: 'sessions'; sessions: SessionRow[] }
+  | { type: 'sessions'; sessions: SessionRow[]; folders: FolderRow[] }
 
 export interface RegistryInfo { skills: Array<{ name: string; description: string; source: string }>; agents: Array<{ name: string; description: string; source: string }>; warnings: string[] }
 
 export interface DeskApi {
-  listSessions(): Promise<SessionRow[]>
+  listSessions(): Promise<{ sessions: SessionRow[]; folders: FolderRow[] }>
+  addFolder(): Promise<string | null>
+  removeFolder(path: string): Promise<void>
+  forkSession(id: string, turn: number): Promise<SessionRow>
   openSession(id: string): Promise<{ session: SessionRow; items: unknown[]; busy: boolean }>
   createSession(opts: { cwd: string; model: string }): Promise<SessionRow>
   deleteSession(id: string): Promise<void>

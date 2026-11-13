@@ -11,6 +11,8 @@ A lightweight, Copilot-style macOS desktop agent for **your own models**. You ge
 - **Sub-agents**: several `task` calls in one turn run in parallel. `mode: "background"` returns at once and the result comes back through `read_agent`. Delegation is limited to depth 2, model calls are capped by a concurrency limit, and Stop cancels the whole agent tree.
 - **Tools**: `shell`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `skill`, `task`, `read_agent`, `list_agents`, `ask_user`.
 - **Approval prompts** before shell commands and file writes (allow once, allow for the session, or deny).
+- **Working folders**: the sidebar groups chats by folder, Copilot-style. Choose the folder when you start a new chat. Skills and agents load from that folder's `.github/` plus `~/.copilot/`.
+- **Fork from any turn**: hover a turn and click *⑂ Fork from here*. You get a new chat with the history up to that point, filed under the chat it came from, and forks can be forked again.
 - **Sessions** are saved in SQLite (`node:sqlite`) under `~/Library/Application Support/aitm-desk/`.
 
 ## Run

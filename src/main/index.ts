@@ -9,6 +9,7 @@ import { Session } from '../engine/engine'
 import { loadRegistry } from '../engine/registry/registry'
 import type { PermissionDecision } from '../engine/types'
 import type { PushEvent } from '../shared/api'
+import { sliceItemsAtTurn, sliceMessagesAtTurn } from '../shared/fork'
 
 // GUI apps launched from Finder get a minimal PATH; give shell tools a usable one.
 process.env.PATH = [process.env.PATH, '/opt/homebrew/bin', '/usr/local/bin', path.join(os.homedir(), '.local/bin')].filter(Boolean).join(':')
@@ -20,6 +21,8 @@ const live = new Map<string, Session>()
 const pending = new Map<string, (v: any) => void>()
 
 const push = (e: PushEvent) => win?.webContents.send('push', e)
+const listing = () => ({ sessions: store.listSessions(), folders: store.listFolders() })
+const pushSessions = () => push({ type: 'sessions', ...listing() })
 const adapter = () => new OpenAIAdapter({ baseUrl: settings.baseUrl, apiKey: settings.apiKey })
 
 function getLive(id: string): Session {
@@ -59,24 +62,47 @@ async function run(id: string, s: Session, prompt?: string) {
     store.saveMessages(id, s.messages.slice(1))
     store.updateSession(id, {})
     push({ type: 'busy', sessionId: id, busy: false })
-    push({ type: 'sessions', sessions: store.listSessions() })
+    pushSessions()
   }
 }
 
 function registerIpc() {
-  ipcMain.handle('listSessions', () => store.listSessions())
+  ipcMain.handle('listSessions', () => listing())
+  ipcMain.handle('addFolder', async () => {
+    const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory', 'createDirectory'], message: 'Choose a working folder' })
+    if (r.canceled) return null
+    store.addFolder(r.filePaths[0]); pushSessions()
+    return r.filePaths[0]
+  })
+  ipcMain.handle('removeFolder', (_e, p: string) => {
+    for (const s of store.listSessions().filter((x) => x.cwd === p)) { live.get(s.id)?.stop(); live.delete(s.id) }
+    store.removeFolder(p); pushSessions()
+  })
+  ipcMain.handle('forkSession', (_e, id: string, turn: number) => {
+    const src = store.getSession(id)
+    if (!src) throw new Error(`no session ${id}`)
+    const sess = live.get(id)
+    const msgs = sess ? sess.messages.slice(1) : store.loadMessages(id)
+    const now = Date.now()
+    const row = { id: randomUUID(), title: `${src.title.replace(/^↳ /, '')} · fork`, cwd: src.cwd, model: src.model, created_at: now, updated_at: now, parent_id: id, fork_turn: turn }
+    store.createSession(row)
+    store.saveMessages(row.id, sliceMessagesAtTurn(msgs, turn))
+    store.saveUiItems(row.id, sliceItemsAtTurn(store.loadUiItems(id) as Array<{ t: string }>, turn))
+    pushSessions()
+    return row
+  })
   ipcMain.handle('openSession', (_e, id: string) => {
     const session = store.getSession(id)
     return { session, items: store.loadUiItems(id), busy: live.get(id)?.isBusy ?? false }
   })
   ipcMain.handle('createSession', (_e, o: { cwd: string; model: string }) => {
     const now = Date.now()
-    const row = { id: randomUUID(), title: 'New chat', cwd: o.cwd, model: o.model, created_at: now, updated_at: now }
+    const row = { id: randomUUID(), title: 'New chat', cwd: o.cwd, model: o.model, created_at: now, updated_at: now, parent_id: null, fork_turn: null }
     store.createSession(row)
     settings.defaultCwd = o.cwd; settings.defaultModel = o.model; saveSettings(settings)
     return row
   })
-  ipcMain.handle('deleteSession', (_e, id: string) => { live.get(id)?.stop(); live.delete(id); store.deleteSession(id); push({ type: 'sessions', sessions: store.listSessions() }) })
+  ipcMain.handle('deleteSession', (_e, id: string) => { live.get(id)?.stop(); live.delete(id); store.deleteSession(id); pushSessions() })
   ipcMain.handle('send', (_e, id: string, prompt: string) => {
     const row = store.getSession(id)
     if (row && row.title === 'New chat') store.updateSession(id, { title: prompt.replace(/\s+/g, ' ').slice(0, 60) })

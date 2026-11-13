@@ -5,6 +5,9 @@ const inv = (ch: string) => (...a: unknown[]) => ipcRenderer.invoke(ch, ...a)
 
 const api: DeskApi = {
   listSessions: inv('listSessions') as any,
+  addFolder: inv('addFolder') as any,
+  removeFolder: inv('removeFolder') as any,
+  forkSession: inv('forkSession') as any,
   openSession: inv('openSession') as any,
   createSession: inv('createSession') as any,
   deleteSession: inv('deleteSession') as any,

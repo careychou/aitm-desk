@@ -2,6 +2,7 @@ import type { AgentEvent } from '../../shared/api'
 
 export type Item =
   | { t: 'user'; text: string }
+  | { t: 'answer'; text: string }
   | { t: 'assistant'; agentId: string; text: string; reasoning: string; closed?: boolean }
   | { t: 'tool'; agentId: string; callId: string; name: string; args: string; output?: string; ok?: boolean }
   | { t: 'agent'; agentId: string; name: string; mode: string; prompt: string; status: string; finalText: string; children: Item[] }

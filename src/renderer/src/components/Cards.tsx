@@ -69,24 +69,36 @@ export function AgentCard({ it }: { it: Extract<Item, { t: 'agent' }> }) {
   )
 }
 
-export function ItemList({ items, live }: { items: Item[]; live: boolean }) {
+export function ItemList({ items, live, onFork }: { items: Item[]; live: boolean; onFork?: (turn: number) => void }) {
+  let turn = -1
+  // the fork button for turn N sits at the end of turn N (just before the next user message, or at the end)
+  const turnEnds = new Map<number, number>()
+  items.forEach((it, i) => { if (it.t === 'user') { turn++ } turnEnds.set(turn, i) })
+  turn = -1
   return (
     <>
       {items.map((it, i) => {
         const isLast = i === items.length - 1
-        switch (it.t) {
-          case 'user': return <div key={i} className="msg user"><div className="bubble">{it.text}</div></div>
+        if (it.t === 'user') turn++
+        const t = turn
+        const forkBtn = onFork && t >= 0 && turnEnds.get(t) === i && !(live && isLast)
+          ? <div className="turn-actions"><button onClick={() => onFork(t)} title="Fork a new chat from this point; it is filed under this chat">⑂ Fork from here</button></div>
+          : null
+        const el = (() => { switch (it.t) {
+          case 'user': return <div className="msg user"><div className="bubble">{it.text}</div></div>
+          case 'answer': return <div className="msg user"><div className="bubble answer">{it.text}</div></div>
           case 'assistant':
             return (
-              <div key={i} className={`msg assistant ${it.agentId === 'main' ? '' : 'sub'}`}>
+              <div className={`msg assistant ${it.agentId === 'main' ? '' : 'sub'}`}>
                 <Reasoning text={it.reasoning} live={live && isLast && !it.text} />
                 {it.text && <Markdown text={it.text} />}
               </div>
             )
-          case 'tool': return <ToolCard key={i} it={it} />
-          case 'agent': return <AgentCard key={i} it={it} />
-          case 'error': return <div key={i} className="err">{it.text}</div>
-        }
+          case 'tool': return <ToolCard it={it} />
+          case 'agent': return <AgentCard it={it} />
+          case 'error': return <div className="err">{it.text}</div>
+        } })()
+        return <div key={i} className="item">{el}{forkBtn}</div>
       })}
     </>
   )
