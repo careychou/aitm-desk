@@ -15,6 +15,11 @@ const items: ExportItem[] = [
 const base = { title: 'Demo', cwd: '/tmp/x', model: 'm', now: new Date('2026-01-01T00:00:00Z') }
 
 describe('export', () => {
+  it('lists attachments under the user prompt', () => {
+    const md = exportMarkdown([{ t: 'user', text: 'see this', attachments: [{ name: 'a.png', info: '120 KB' }] }], base)
+    expect(md).toContain('see this\n\n📎 _a.png_ (120 KB; not included in the export)')
+  })
+
   it('splits turns at user items', () => {
     expect(splitTurns(items).map((t) => t.length)).toEqual([4, 3, 2])
   })

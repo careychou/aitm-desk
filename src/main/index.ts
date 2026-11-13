@@ -13,6 +13,8 @@ import type { Message, PermissionDecision } from '../engine/types'
 import type { CompactItem, PushEvent } from '../shared/api'
 import { BRAND } from '../shared/brand'
 import { insertBeforeTurn, liveTurnMap, orderRows, reorderIds, sliceItemsAtTurn, sliceMessagesAtTurn } from '../shared/fork'
+import { prepareAttachment, type AttachInput } from './attachments'
+import type { Attachment } from '../engine/content'
 import { estimateTokens, keepLastPlan, splitHistoryTurns, type CompactPlan } from '../engine/compact'
 
 // GUI apps launched from Finder get a minimal PATH; give shell tools a usable one.
@@ -31,7 +33,11 @@ type Effort = Settings['reasoning']
 const effortOf = (row: { reasoning?: string | null }): Effort => (row.reasoning as Effort) || settings.reasoning
 const memoriesOf = (row: { memories?: string | null }): string[] => { try { return JSON.parse(row.memories || '[]') } catch { return [] } }
 const sharesDir = () => path.join(app.getPath('documents'), BRAND.name, 'shares')
-const adapter = () => new OpenAIAdapter({ baseUrl: settings.baseUrl, apiKey: settings.apiKey })
+const adapter = () => new OpenAIAdapter({
+  baseUrl: settings.baseUrl, apiKey: settings.apiKey,
+  budget: () => ({ maxBytes: settings.requestMaxMB * 1024 * 1024, imageTurns: settings.imageTurns })
+})
+const prepare = (inputs: AttachInput[]) => Promise.all(inputs.map((i) => prepareAttachment(i, settings)))
 
 function getLive(id: string): Session {
   let s = live.get(id)
@@ -88,18 +94,18 @@ async function compactSession(id: string, plan: CompactPlan, auto = false) {
   return r
 }
 
-async function run(id: string, s: Session, prompt?: string) {
+async function run(id: string, s: Session, prompt?: string, atts: Attachment[] = []) {
   if (s.isBusy) return
   push({ type: 'busy', sessionId: id, busy: true })
   try {
-    if (prompt && settings.autoCompact === 'auto' && s.tokenEstimate > settings.compactThreshold) {
+    if ((prompt || atts.length) && settings.autoCompact === 'auto' && s.tokenEstimate > settings.compactThreshold) {
       const turns = splitHistoryTurns(s.history)
       if (turns.length > settings.compactKeepRecent) {
         try { await compactSession(id, keepLastPlan(turns.length, settings.compactKeepRecent), true) }
         catch (e: any) { push({ type: 'agent', sessionId: id, event: { kind: 'error', agentId: 'main', message: `Auto-compact failed: ${e.message}` } }) }
       }
     }
-    await s.send(prompt)
+    await s.send(prompt, atts)
   } finally {
     store.saveMessages(id, s.messages.slice(1))
     store.updateSession(id, {})
@@ -153,10 +159,16 @@ function registerIpc() {
     return row
   })
   ipcMain.handle('deleteSession', (_e, id: string) => { live.get(id)?.stop(); live.delete(id); store.deleteSession(id); pushSessions() })
-  ipcMain.handle('send', (_e, id: string, prompt: string) => {
+  ipcMain.handle('send', (_e, id: string, prompt: string, atts: Attachment[] = []) => {
     const row = store.getSession(id)
-    if (row && row.title === 'New chat') store.updateSession(id, { title: prompt.replace(/\s+/g, ' ').slice(0, 60) })
-    void run(id, getLive(id), prompt)
+    const title = prompt.trim() || atts.map((a) => a.name).join(', ')
+    if (row && row.title === 'New chat' && title) store.updateSession(id, { title: title.replace(/\s+/g, ' ').slice(0, 60) })
+    void run(id, getLive(id), prompt, atts)
+  })
+  ipcMain.handle('prepareAttachments', (_e, inputs: AttachInput[]) => prepare(inputs))
+  ipcMain.handle('pickAttachments', async () => {
+    const r = await dialog.showOpenDialog(win!, { properties: ['openFile', 'multiSelections'], message: 'Attach files: images, PDF, Office, text or code' })
+    return r.canceled ? [] : prepare(r.filePaths.map((p) => ({ path: p })))
   })
   ipcMain.handle('stop', (_e, id: string) => live.get(id)?.stop())
   ipcMain.handle('saveItems', (_e, id: string, items: unknown[]) => store.saveUiItems(id, items))

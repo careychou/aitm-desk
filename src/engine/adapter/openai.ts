@@ -1,11 +1,17 @@
 import type { ChatRequest, Delta, Message, ModelAdapter } from '../types'
 import { parseSSE } from './sse'
+import { fitRequest, type RequestBudget } from '../content'
 
-export interface AdapterConfig { baseUrl: string; apiKey: string }
+export interface AdapterConfig {
+  baseUrl: string
+  apiKey: string
+  /** Read on every request so settings changes apply to open chats. */
+  budget?: () => RequestBudget
+}
 
 /** Strips engine-only fields before sending messages upstream. */
-function wireMessages(msgs: Message[]): unknown[] {
-  return msgs.map((m) => {
+function wireMessages(msgs: Message[], budget?: RequestBudget): unknown[] {
+  return (budget ? fitRequest(msgs, budget) : msgs).map((m) => {
     if (m.role === 'assistant') {
       const { reasoning: _r, ...rest } = m
       return rest
@@ -27,7 +33,7 @@ export class OpenAIAdapter implements ModelAdapter {
   async *stream(req: ChatRequest, signal: AbortSignal): AsyncIterable<Delta> {
     const body: Record<string, unknown> = {
       model: req.model,
-      messages: wireMessages(req.messages),
+      messages: wireMessages(req.messages, this.cfg.budget?.()),
       stream: true,
       stream_options: { include_usage: true },
       max_tokens: req.maxTokens ?? 16000

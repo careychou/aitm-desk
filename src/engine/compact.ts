@@ -1,5 +1,6 @@
 import type { Message, ModelAdapter } from './types'
 import { COMPACT_TAG, isRealUser } from '../shared/fork'
+import { IMAGE_TOKENS, textOf } from './content'
 
 export interface Turn {
   /** 0-based index among the turns still in the live history. */
@@ -29,13 +30,17 @@ const range = (a: number, b: number) => Array.from({ length: Math.max(0, b - a) 
 const END_TAG = '</compacted_history>'
 export const COMPACT_ACK = 'Understood. I have the summary of the earlier conversation and will build on it.'
 
+/** Rough token count: JSON chars / 4, with each image counted as a flat IMAGE_TOKENS (not its base64 size). */
 export const estimateTokens = (messages: Message[]) =>
-  Math.round(messages.reduce((n, m) => n + JSON.stringify(m).length, 0) / 4)
+  Math.round(messages.reduce((n, m) => {
+    if (m.role !== 'user' || typeof m.content === 'string') return n + JSON.stringify(m).length / 4
+    return n + m.content.reduce((k, p) => k + (p.type === 'text' ? p.text.length / 4 : IMAGE_TOKENS), 8)
+  }, 0))
 
 /** Existing summary carried by a previous compaction (the leading <compacted_history> message), if any. */
 export function priorSummary(history: Message[]): string {
   const m = history[0]
-  if (m?.role !== 'user' || !m.content.startsWith(COMPACT_TAG)) return ''
+  if (m?.role !== 'user' || typeof m.content !== 'string' || !m.content.startsWith(COMPACT_TAG)) return ''
   return m.content.slice(COMPACT_TAG.length).replace(END_TAG, '').trim()
 }
 
@@ -43,7 +48,7 @@ export function priorSummary(history: Message[]): string {
 export function splitHistoryTurns(history: Message[]): Turn[] {
   const turns: Turn[] = []
   for (const m of history) {
-    if (isRealUser(m)) turns.push({ index: turns.length, messages: [m], user: m.content as string, answer: '', tools: [] })
+    if (isRealUser(m)) turns.push({ index: turns.length, messages: [m], user: textOf(m.content), answer: '', tools: [] })
     else if (turns.length) turns[turns.length - 1].messages.push(m)
   }
   for (const t of turns) {
@@ -119,13 +124,13 @@ export async function clusterTurns(adapter: ModelAdapter, model: string, turns: 
 }
 
 function transcript(t: Turn): string {
-  const parts = [`### Turn ${t.index + 1}\nUSER: ${t.user}`]
+  const parts = [`### Turn ${t.index + 1}\nUSER: ${clip(t.user, 8000)}`]
   for (const m of t.messages.slice(1)) {
     if (m.role === 'assistant') {
       if (m.content) parts.push(`ASSISTANT: ${clip(m.content, 6000)}`)
       for (const c of m.tool_calls ?? []) parts.push(`TOOL CALL ${c.function.name}: ${clip(c.function.arguments, 600)}`)
     } else if (m.role === 'tool') parts.push(`TOOL RESULT: ${clip(m.content, 1500)}`)
-    else if (m.role === 'user') parts.push(`NOTIFICATION: ${clip(m.content, 800)}`)
+    else if (m.role === 'user') parts.push(`NOTIFICATION: ${clip(textOf(m.content), 800)}`)
   }
   return parts.join('\n')
 }

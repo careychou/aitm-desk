@@ -114,7 +114,15 @@ export function ItemList({ items, live, onFork }: { items: Item[]; live: boolean
           ? <div className="turn-actions"><button onClick={() => onFork(t)} title="Fork a new chat from this point; it is filed under this chat">⑂ Fork from here</button></div>
           : null
         const el = (() => { switch (it.t) {
-          case 'user': return <div className="msg user"><div className="bubble">{it.text}</div></div>
+          case 'user': return (
+            <div className="msg user">
+              {it.attachments?.length ? <div className="atts">{it.attachments.map((a, k) => (
+                <div key={k} className="att-chip" title={`${a.name}\n${a.info}`}>
+                  {a.thumb ? <img src={a.thumb} alt="" /> : <span className="att-ico">📄</span>}
+                  <span className="att-text"><span className="att-name">{a.name}</span><span className="att-info">{a.info}</span></span>
+                </div>))}</div> : null}
+              {it.text && <div className="bubble">{it.text}</div>}
+            </div>)
           case 'answer': return <div className="msg user"><div className="bubble answer">{it.text}</div></div>
           case 'assistant':
             return (

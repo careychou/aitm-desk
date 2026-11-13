@@ -1,4 +1,5 @@
 import type { Hooks, Message, ModelAdapter } from './types'
+import { buildUserContent, type Attachment } from './content'
 import { loadRegistry, type Registry } from './registry/registry'
 import { AgentManager } from './manager'
 import { runLoop, AbortedError } from './loop'
@@ -55,11 +56,11 @@ export class Session {
   setMemories(paths: string[]) { this.o.memories = paths; this.messages[0] = { role: 'system', content: buildMainSystem(this.registry, this.o.cwd, paths) } }
 
   /** Sends a user prompt (or, with no prompt, just delivers pending notifications) and runs the main loop. */
-  async send(prompt?: string): Promise<{ status: 'completed' | 'failed' | 'cancelled'; text: string }> {
+  async send(prompt?: string, attachments: Attachment[] = []): Promise<{ status: 'completed' | 'failed' | 'cancelled'; text: string }> {
     if (this.busy) throw new Error('session is busy')
     this.busy = true
     const controller = this.manager.registerMain(MAIN_ID)
-    if (prompt) this.messages.push({ role: 'user', content: prompt })
+    if (prompt || attachments.length) this.messages.push({ role: 'user', content: buildUserContent(prompt ?? '', attachments) })
     let status: 'completed' | 'failed' | 'cancelled' = 'completed'
     let text = ''
     try {

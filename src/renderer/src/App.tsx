@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { BookmarkRow, FolderRow, Listing, PushEvent, RegistryInfo, SessionRow } from '../../shared/api'
+import type { BookmarkRow, FolderRow, Listing, PreparedAttachment, PushEvent, RegistryInfo, SessionRow } from '../../shared/api'
 import { insertBeforeTurn } from '../../shared/fork'
 import { applyEvent, runningBackground, settle, type Item } from './state'
 import { ItemList } from './components/Cards'
@@ -111,16 +111,16 @@ export function App() {
     setCurrent(null); setItems([]); setBusy(false); setPerms([]); setAsks([]); setFolderMenu(false); setDraftEffort(null); setDraftMem([]); setTokens(0)
   }
 
-  const send = async (text: string) => {
+  const send = async (text: string, atts: PreparedAttachment[] = []) => {
     let s = current
     if (!s) {
       s = await window.desk.createSession({ cwd: draftCwd, model: draftModel, reasoning: draftEffort ?? undefined, memories: draftMem })
       setCurrent(s); currentRef.current = s
     }
     stick.current = true
-    setItems((prev) => [...prev, { t: 'user', text }])
+    setItems((prev) => [...prev, atts.length ? { t: 'user', text, attachments: atts.map((a) => a.meta) } : { t: 'user', text }])
     setBusy(true)
-    await window.desk.send(s.id, text)
+    await window.desk.send(s.id, text, atts.map((a) => a.att!))
   }
 
   const fork = async (turn: number) => {

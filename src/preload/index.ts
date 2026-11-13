@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { DeskApi, PushEvent } from '../shared/api'
 
 const inv = (ch: string) => (...a: unknown[]) => ipcRenderer.invoke(ch, ...a)
@@ -28,6 +28,9 @@ const api: DeskApi = {
   loadItems: inv('loadItems') as any,
   deleteSession: inv('deleteSession') as any,
   send: inv('send') as any,
+  prepareAttachments: inv('prepareAttachments') as any,
+  pickAttachments: inv('pickAttachments') as any,
+  pathForFile: (f: File) => { try { return webUtils.getPathForFile(f) } catch { return '' } },
   stop: inv('stop') as any,
   saveItems: inv('saveItems') as any,
   setModel: inv('setModel') as any,

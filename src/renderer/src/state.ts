@@ -1,7 +1,7 @@
-import type { AgentEvent } from '../../shared/api'
+import type { AgentEvent, AttachMeta } from '../../shared/api'
 
 export type Item =
-  | { t: 'user'; text: string }
+  | { t: 'user'; text: string; attachments?: AttachMeta[] }
   | { t: 'answer'; text: string }
   | { t: 'assistant'; agentId: string; text: string; reasoning: string; closed?: boolean }
   | { t: 'tool'; agentId: string; callId: string; name: string; args: string; output?: string; ok?: boolean }

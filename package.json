@@ -1,6 +1,6 @@
 {
   "name": "aitm-desk",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Lightweight Copilot-like desktop agent for custom models",
   "main": "out/main/index.js",
   "type": "commonjs",
@@ -44,7 +44,8 @@
     "dompurify": "^3.4.17",
     "highlight.js": "^11.12.0",
     "js-yaml": "^5.5.0",
-    "marked": "^18.2.0"
+    "marked": "^18.2.0",
+    "unpdf": "^2.1.0"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",

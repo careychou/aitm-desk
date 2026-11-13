@@ -3,8 +3,9 @@ import path from 'node:path'
 import os from 'node:os'
 import { app, safeStorage } from 'electron'
 import { defaultProvider } from '../engine/config'
+import { DEFAULT_LIMITS, type AttachLimits } from '../shared/attach'
 
-export interface Settings {
+export interface Settings extends AttachLimits {
   baseUrl: string
   apiKey: string
   defaultModel: string
@@ -16,6 +17,10 @@ export interface Settings {
   autoCompact: 'off' | 'suggest' | 'auto'
   compactThreshold: number
   compactKeepRecent: number
+  /** Request body cap in MB (Vertex rejects > 30 MB). */
+  requestMaxMB: number
+  /** Re-send images from only the last N user messages (0 = all). */
+  imageTurns: number
 }
 
 let dir = ''
@@ -25,7 +30,7 @@ const file = () => path.join(dir || app.getPath('userData'), 'settings.json')
 
 export function loadSettings(): Settings {
   const d = defaultProvider()
-  const defaults: Settings = { baseUrl: d.baseUrl, apiKey: d.apiKey, defaultModel: 'anthropic/claude-sonnet-5', defaultCwd: os.homedir(), maxConcurrency: 4, maxTurnsMain: 50, maxTurnsSub: 30, reasoning: 'medium', autoCompact: 'suggest', compactThreshold: 80000, compactKeepRecent: 2 }
+  const defaults: Settings = { baseUrl: d.baseUrl, apiKey: d.apiKey, defaultModel: 'anthropic/claude-sonnet-5', defaultCwd: os.homedir(), maxConcurrency: 4, maxTurnsMain: 50, maxTurnsSub: 30, reasoning: 'medium', autoCompact: 'suggest', compactThreshold: 80000, compactKeepRecent: 2, ...DEFAULT_LIMITS, requestMaxMB: 20, imageTurns: 4 }
   try {
     const raw = JSON.parse(fs.readFileSync(file(), 'utf8'))
     if (raw.apiKeyEnc && safeStorage.isEncryptionAvailable()) raw.apiKey = safeStorage.decryptString(Buffer.from(raw.apiKeyEnc, 'base64'))

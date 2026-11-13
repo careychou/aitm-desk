@@ -1,7 +1,12 @@
 import type { AgentEvent, PermissionDecision, PermissionKind } from '../engine/types'
 import type { SessionRow, FolderRow, BookmarkRow } from '../main/store'
 import type { Settings } from '../main/settings'
+import type { Attachment } from '../engine/content'
+import type { AttachMeta } from './attach'
 
+export type { Attachment, AttachMeta }
+export interface AttachInput { path?: string; name?: string; data?: Uint8Array }
+export interface PreparedAttachment { id: string; att?: Attachment; meta: AttachMeta; error?: string }
 export type { AgentEvent, SessionRow, FolderRow, BookmarkRow, Settings, PermissionDecision }
 export interface Listing { sessions: SessionRow[]; folders: FolderRow[]; bookmarks: BookmarkRow[] }
 export interface CompactItem { t: 'compact'; auto: boolean; summarized: number; dropped: number; before: number; after: number; summary: string; keptTurns?: number[]; summarizedTurns?: number[]; droppedTurns?: number[] }
@@ -44,7 +49,11 @@ export interface DeskApi {
   revealFile(path: string): Promise<void>
   loadItems(sessionId: string): Promise<unknown[]>
   deleteSession(id: string): Promise<void>
-  send(sessionId: string, prompt: string): Promise<void>
+  send(sessionId: string, prompt: string, attachments?: Attachment[]): Promise<void>
+  prepareAttachments(inputs: AttachInput[]): Promise<PreparedAttachment[]>
+  pickAttachments(): Promise<PreparedAttachment[]>
+  /** Absolute path of a dropped/pasted File ('' when it has none, e.g. a screenshot). */
+  pathForFile(f: File): string
   stop(sessionId: string): Promise<void>
   saveItems(sessionId: string, items: unknown[]): Promise<void>
   setModel(sessionId: string, model: string): Promise<void>

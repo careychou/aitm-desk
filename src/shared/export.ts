@@ -1,6 +1,6 @@
 /** Minimal structural view of renderer UI items needed for export. */
 export type ExportItem =
-  | { t: 'user'; text: string }
+  | { t: 'user'; text: string; attachments?: Array<{ name: string; info: string }> }
   | { t: 'answer'; text: string }
   | { t: 'assistant'; agentId: string; text: string; reasoning: string }
   | { t: 'tool'; name: string; args: string; output?: string; ok?: boolean }
@@ -17,6 +17,9 @@ export interface ExportOptions {
   includeThinking?: boolean
   now?: Date
 }
+
+const userText = (u: Extract<ExportItem, { t: 'user' }>) =>
+  [u.text.trim(), ...(u.attachments ?? []).map((a) => `📎 _${a.name}_ (${a.info}; not included in the export)`)].filter(Boolean).join('\n\n')
 
 export const EXPORT_MARKER = 'aitm-desk-export: 1'
 
@@ -82,7 +85,7 @@ export function exportMarkdown(items: ExportItem[], o: ExportOptions): string {
   const body = pick.map((i) => {
     const [user, ...rest] = all[i] as ExportItem[]
     const parts = renderItems(rest, o, 0)
-    return [`## Turn ${i + 1}`, '', '### User', '', (user as { text: string }).text.trim(), '', '### Assistant', '', parts.join('\n\n') || '_(no response)_'].join('\n')
+    return [`## Turn ${i + 1}`, '', '### User', '', userText(user as Extract<ExportItem, { t: 'user' }>), '', '### Assistant', '', parts.join('\n\n') || '_(no response)_'].join('\n')
   })
   return head.join('\n') + body.join('\n\n---\n\n') + '\n'
 }
