@@ -37,6 +37,19 @@ function mk(script: Script, extra: Partial<ConstructorParameters<typeof Session>
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 describe('Session main loop', () => {
+  it('loads attached memory exports into the system prompt and can swap them', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mem-'))
+    fs.writeFileSync(`${dir}/a.md`, 'MEMORY_A_FACT'); fs.writeFileSync(`${dir}/b.md`, 'MEMORY_B_FACT')
+    const { s, adapter } = mk(() => say('ok'), { memories: [`${dir}/a.md`] })
+    await s.send('go')
+    expect(adapter.calls[0].messages[0].content).toContain('MEMORY_A_FACT')
+    s.setMemories([`${dir}/b.md`])
+    await s.send('again')
+    const sys = adapter.calls[1].messages[0].content as string
+    expect(sys).toContain('MEMORY_B_FACT')
+    expect(sys).not.toContain('MEMORY_A_FACT')
+  })
+
   it('emits reasoning events unless reasoning is off', async () => {
     const script = () => [{ type: 'reasoning', text: 'hmm' } as Delta, ...say('ok')]
     const on = mk(script)

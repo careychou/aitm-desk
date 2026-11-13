@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FolderRow, PushEvent, RegistryInfo, SessionRow } from '../../shared/api'
 import { applyEvent, runningBackground, settle, type Item } from './state'
 import { ItemList } from './components/Cards'
-import { Composer } from './components/Composer'
+import { Composer, type Effort } from './components/Composer'
+import { ShareModal } from './components/ShareModal'
 import { AskCard, PermissionCard, type AskReq, type PermissionReq } from './components/Prompts'
 import { SettingsModal } from './components/SettingsModal'
 import { Sidebar } from './components/Sidebar'
@@ -25,6 +26,10 @@ export function App() {
   const [modelErr, setModelErr] = useState('')
   const [draftModel, setDraftModel] = useState('')
   const [draftCwd, setDraftCwd] = useState('')
+  const [defaultEffort, setDefaultEffort] = useState<Effort>('medium')
+  const [draftEffort, setDraftEffort] = useState<Effort | null>(null)
+  const [draftMem, setDraftMem] = useState<string[]>([])
+  const [sharing, setSharing] = useState<SessionRow | null>(null)
   const [reg, setReg] = useState<RegistryInfo | null>(null)
   const [folderMenu, setFolderMenu] = useState(false)
   const [perms, setPerms] = useState<PermissionReq[]>([])
@@ -43,7 +48,7 @@ export function App() {
     const cur = currentRef.current
     if (cur) {
       const fresh = l.sessions.find((s) => s.id === cur.id)
-      if (fresh && fresh.title !== cur.title) setCurrent({ ...cur, title: fresh.title })
+      if (fresh && (fresh.title !== cur.title || fresh.memories !== cur.memories)) setCurrent({ ...cur, title: fresh.title, memories: fresh.memories })
     }
   }
 
@@ -54,7 +59,7 @@ export function App() {
 
   useEffect(() => {
     void window.desk.listSessions().then(applyListing)
-    void window.desk.getSettings().then((s) => { setDraftModel(s.defaultModel); setDraftCwd(s.defaultCwd) })
+    void window.desk.getSettings().then((s) => { setDraftModel(s.defaultModel); setDraftCwd(s.defaultCwd); setDefaultEffort(s.reasoning) })
     void refreshModels()
     return window.desk.onPush((p: PushEvent) => {
       if (p.type === 'sessions') { applyListing(p); return }
@@ -93,13 +98,13 @@ export function App() {
   const newChat = async (folder: string) => {
     await persistCurrent()
     if (folder) setDraftCwd(folder)
-    setCurrent(null); setItems([]); setBusy(false); setPerms([]); setAsks([]); setFolderMenu(false)
+    setCurrent(null); setItems([]); setBusy(false); setPerms([]); setAsks([]); setFolderMenu(false); setDraftEffort(null); setDraftMem([])
   }
 
   const send = async (text: string) => {
     let s = current
     if (!s) {
-      s = await window.desk.createSession({ cwd: draftCwd, model: draftModel })
+      s = await window.desk.createSession({ cwd: draftCwd, model: draftModel, reasoning: draftEffort ?? undefined, memories: draftMem })
       setCurrent(s); currentRef.current = s
     }
     stick.current = true
@@ -119,6 +124,19 @@ export function App() {
     if (current) { await window.desk.setModel(current.id, m); setCurrent({ ...current, model: m }) }
     else setDraftModel(m)
   }
+
+  const effort: Effort = ((current ? current.reasoning : draftEffort) as Effort) || defaultEffort
+  const setEffort = async (e: Effort) => {
+    if (current) { await window.desk.setReasoning(current.id, e); setCurrent({ ...current, reasoning: e }) }
+    else setDraftEffort(e)
+  }
+  const memories: string[] = current ? JSON.parse(current.memories || '[]') : draftMem
+  const setMemories = async (paths: string[]) => {
+    const uniq = [...new Set(paths)]
+    if (current) { await window.desk.setMemories(current.id, uniq); setCurrent({ ...current, memories: uniq.length ? JSON.stringify(uniq) : null }) }
+    else setDraftMem(uniq)
+  }
+  const addMemory = async () => { const p = await window.desk.pickMemories(); if (p.length) await setMemories([...memories, ...p]) }
 
   const addFolder = async () => {
     const f = await window.desk.addFolder()
@@ -145,7 +163,9 @@ export function App() {
 
   const composer = (
     <Composer busy={busy} model={model} models={models} cwd={cwd} onModel={setModel}
-      onPickFolder={current ? undefined : () => setFolderMenu(!folderMenu)} onSend={send} onStop={() => current && window.desk.stop(current.id)} autoFocus />
+      onPickFolder={current ? undefined : () => setFolderMenu(!folderMenu)} onSend={send} onStop={() => current && window.desk.stop(current.id)} autoFocus
+      effort={effort} onEffort={setEffort} memories={memories} onAddMemory={addMemory} onRemoveMemory={(m) => setMemories(memories.filter((x) => x !== m))}
+      onShare={current && !busy ? async () => { await persistCurrent(); setSharing(current) } : undefined} />
   )
 
   return (
@@ -153,7 +173,8 @@ export function App() {
       {sidebar && (
         <Sidebar folders={folders} sessions={sessions} currentId={current?.id ?? null} busyIds={busyIds}
           onOpen={open} onNewChat={newChat} onDelete={del} onAddFolder={addFolder} onRemoveFolder={removeFolder}
-          onCollapse={() => setSidebar(false)} onSettings={() => setShowSettings(true)} />
+          onCollapse={() => setSidebar(false)} onSettings={() => setShowSettings(true)}
+          onShare={async (s) => { await persistCurrent(); setSharing(s) }} />
       )}
 
       <main className="main">
@@ -207,7 +228,8 @@ export function App() {
           </>
         )}
       </main>
-      {showSettings && <SettingsModal cwd={cwd} onClose={() => { setShowSettings(false); void refreshModels() }} />}
+      {showSettings && <SettingsModal cwd={cwd} onClose={() => { setShowSettings(false); void refreshModels(); void window.desk.getSettings().then((s) => setDefaultEffort(s.reasoning)) }} />}
+      {sharing && <ShareModal session={sharing} onClose={() => setSharing(null)} />}
     </div>
   )
 }

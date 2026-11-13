@@ -14,6 +14,7 @@ interface Props {
   onRemoveFolder(path: string): void
   onCollapse(): void
   onSettings(): void
+  onShare(s: SessionRow): void
 }
 
 const base = (p: string) => p.split('/').filter(Boolean).pop() ?? p
@@ -30,6 +31,7 @@ function SessionNode({ node, depth, p }: { node: TreeNode<SessionRow>; depth: nu
           : depth > 0 ? <span className="fork-mark">⑂</span> : <span className={`dot ${p.busyIds.has(s.id) ? 'busy' : ''}`} />}
         <span className="title">{s.title}</span>
         {hasKids && !open && <span className="count">{node.children.length}</span>}
+        <button className="del" title="Share / export chat" onClick={(e) => { e.stopPropagation(); p.onShare(s) }}>⇪</button>
         <button className="del" title="Delete chat" onClick={(e) => { e.stopPropagation(); p.onDelete(s) }}>×</button>
       </div>
       {open && node.children.map((c) => <SessionNode key={c.row.id} node={c} depth={depth + 1} p={p} />)}

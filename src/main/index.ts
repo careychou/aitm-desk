@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain, dialog, shell as eshell } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, clipboard, shell as eshell } from 'electron'
+import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { randomUUID } from 'node:crypto'
@@ -23,6 +24,10 @@ const pending = new Map<string, (v: any) => void>()
 const push = (e: PushEvent) => win?.webContents.send('push', e)
 const listing = () => ({ sessions: store.listSessions(), folders: store.listFolders() })
 const pushSessions = () => push({ type: 'sessions', ...listing() })
+type Effort = Settings['reasoning']
+const effortOf = (row: { reasoning?: string | null }): Effort => (row.reasoning as Effort) || settings.reasoning
+const memoriesOf = (row: { memories?: string | null }): string[] => { try { return JSON.parse(row.memories || '[]') } catch { return [] } }
+const sharesDir = () => path.join(app.getPath('documents'), 'AITM Desk', 'shares')
 const adapter = () => new OpenAIAdapter({ baseUrl: settings.baseUrl, apiKey: settings.apiKey })
 
 function getLive(id: string): Session {
@@ -32,7 +37,7 @@ function getLive(id: string): Session {
   if (!row) throw new Error(`no session ${id}`)
   s = new Session({
     adapter: adapter(), cwd: row.cwd, model: row.model, history: store.loadMessages(id),
-    maxConcurrency: settings.maxConcurrency, maxTurnsMain: settings.maxTurnsMain, maxTurnsSub: settings.maxTurnsSub, reasoning: settings.reasoning,
+    maxConcurrency: settings.maxConcurrency, maxTurnsMain: settings.maxTurnsMain, maxTurnsSub: settings.maxTurnsSub, reasoning: effortOf(row), memories: memoriesOf(row),
     hooks: {
       onEvent: (event) => push({ type: 'agent', sessionId: id, event }),
       requestPermission: (r) => new Promise<PermissionDecision>((resolve) => {
@@ -84,7 +89,7 @@ function registerIpc() {
     const sess = live.get(id)
     const msgs = sess ? sess.messages.slice(1) : store.loadMessages(id)
     const now = Date.now()
-    const row = { id: randomUUID(), title: `${src.title.replace(/^↳ /, '')} · fork`, cwd: src.cwd, model: src.model, created_at: now, updated_at: now, parent_id: id, fork_turn: turn }
+    const row = { id: randomUUID(), title: `${src.title.replace(/^↳ /, '')} · fork`, cwd: src.cwd, model: src.model, created_at: now, updated_at: now, parent_id: id, fork_turn: turn, reasoning: src.reasoning ?? null, memories: src.memories ?? null }
     store.createSession(row)
     store.saveMessages(row.id, sliceMessagesAtTurn(msgs, turn))
     store.saveUiItems(row.id, sliceItemsAtTurn(store.loadUiItems(id) as Array<{ t: string }>, turn))
@@ -95,9 +100,10 @@ function registerIpc() {
     const session = store.getSession(id)
     return { session, items: store.loadUiItems(id), busy: live.get(id)?.isBusy ?? false }
   })
-  ipcMain.handle('createSession', (_e, o: { cwd: string; model: string }) => {
+  ipcMain.handle('createSession', (_e, o: { cwd: string; model: string; reasoning?: Effort; memories?: string[] }) => {
     const now = Date.now()
-    const row = { id: randomUUID(), title: 'New chat', cwd: o.cwd, model: o.model, created_at: now, updated_at: now, parent_id: null, fork_turn: null }
+    const row = { id: randomUUID(), title: 'New chat', cwd: o.cwd, model: o.model, created_at: now, updated_at: now, parent_id: null, fork_turn: null,
+      reasoning: o.reasoning ?? null, memories: o.memories?.length ? JSON.stringify(o.memories) : null }
     store.createSession(row)
     settings.defaultCwd = o.cwd; settings.defaultModel = o.model; saveSettings(settings)
     return row
@@ -111,6 +117,26 @@ function registerIpc() {
   ipcMain.handle('stop', (_e, id: string) => live.get(id)?.stop())
   ipcMain.handle('saveItems', (_e, id: string, items: unknown[]) => store.saveUiItems(id, items))
   ipcMain.handle('setModel', (_e, id: string, model: string) => { store.updateSession(id, { model }); live.get(id)?.setModel(model); settings.defaultModel = model; saveSettings(settings) })
+  ipcMain.handle('setReasoning', (_e, id: string, r: Effort) => { store.updateSession(id, { reasoning: r }); live.get(id)?.setReasoning(r) })
+  ipcMain.handle('setMemories', (_e, id: string, paths: string[]) => {
+    store.updateSession(id, { memories: paths.length ? JSON.stringify(paths) : null }); live.get(id)?.setMemories(paths); pushSessions()
+  })
+  ipcMain.handle('pickMemories', async () => {
+    fs.mkdirSync(sharesDir(), { recursive: true })
+    const r = await dialog.showOpenDialog(win!, { defaultPath: sharesDir(), properties: ['openFile', 'multiSelections'], filters: [{ name: 'Markdown', extensions: ['md', 'markdown', 'txt'] }], message: 'Attach shared session exports as memory' })
+    return r.canceled ? [] : r.filePaths
+  })
+  ipcMain.handle('saveExport', async (_e, name: string, md: string) => {
+    fs.mkdirSync(sharesDir(), { recursive: true })
+    const safe = name.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 60) || 'session'
+    const r = await dialog.showSaveDialog(win!, { defaultPath: path.join(sharesDir(), `${safe}.md`), filters: [{ name: 'Markdown', extensions: ['md'] }] })
+    if (r.canceled || !r.filePath) return null
+    fs.writeFileSync(r.filePath, md)
+    return r.filePath
+  })
+  ipcMain.handle('copyText', (_e, t: string) => clipboard.writeText(t))
+  ipcMain.handle('revealFile', (_e, p: string) => eshell.showItemInFolder(p))
+  ipcMain.handle('loadItems', (_e, id: string) => store.loadUiItems(id))
   ipcMain.handle('respondPermission', (_e, rid: string, d: PermissionDecision) => { pending.get(rid)?.(d); pending.delete(rid) })
   ipcMain.handle('respondAsk', (_e, rid: string, a: string) => { pending.get(rid)?.(a); pending.delete(rid) })
   ipcMain.handle('listModels', async () => {
@@ -123,7 +149,7 @@ function registerIpc() {
   ipcMain.handle('getSettings', () => settings)
   ipcMain.handle('saveSettings', (_e, s: Settings) => {
     settings = s; saveSettings(s)
-    for (const [id, sess] of live) { sess.setReasoning(s.reasoning); if (!sess.isBusy) live.delete(id) }
+    for (const [id, sess] of live) { if (!store.getSession(id)?.reasoning) sess.setReasoning(s.reasoning); if (!sess.isBusy) live.delete(id) }
   })
   ipcMain.handle('registryInfo', (_e, cwd: string) => {
     const r = loadRegistry({ cwd })

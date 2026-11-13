@@ -25,7 +25,7 @@ export function SettingsModal({ cwd, onClose }: { cwd: string; onClose(): void }
           <div className="form">
             <label>Base URL (OpenAI-compatible)<input value={s.baseUrl} onChange={(e) => set('baseUrl', e.target.value)} /></label>
             <label>API key<input type="password" value={s.apiKey} onChange={(e) => set('apiKey', e.target.value)} /></label>
-            <label>Show model thinking (reasoning effort)
+            <label>Default thinking for new chats (each chat can override it below its chat box)
               <select value={s.reasoning} onChange={(e) => set('reasoning', e.target.value)}>
                 <option value="off">Off — no thinking block</option>
                 <option value="low">Low</option>

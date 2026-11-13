@@ -20,7 +20,14 @@ export interface DeskApi {
   removeFolder(path: string): Promise<void>
   forkSession(id: string, turn: number): Promise<SessionRow>
   openSession(id: string): Promise<{ session: SessionRow; items: unknown[]; busy: boolean }>
-  createSession(opts: { cwd: string; model: string }): Promise<SessionRow>
+  createSession(opts: { cwd: string; model: string; reasoning?: Settings['reasoning']; memories?: string[] }): Promise<SessionRow>
+  setReasoning(sessionId: string, r: Settings['reasoning']): Promise<void>
+  setMemories(sessionId: string, paths: string[]): Promise<void>
+  pickMemories(): Promise<string[]>
+  saveExport(name: string, markdown: string): Promise<string | null>
+  copyText(text: string): Promise<void>
+  revealFile(path: string): Promise<void>
+  loadItems(sessionId: string): Promise<unknown[]>
   deleteSession(id: string): Promise<void>
   send(sessionId: string, prompt: string): Promise<void>
   stop(sessionId: string): Promise<void>

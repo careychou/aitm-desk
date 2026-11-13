@@ -10,7 +10,17 @@ interface Props {
   onSend(text: string): void
   onStop(): void
   autoFocus?: boolean
+  effort: Effort
+  onEffort(e: Effort): void
+  memories: string[]
+  onAddMemory(): void
+  onRemoveMemory(path: string): void
+  onShare?: () => void
 }
+
+export type Effort = 'off' | 'low' | 'medium' | 'high'
+const EFFORTS: Array<[Effort, string]> = [['off', 'Thinking off'], ['low', 'Low effort'], ['medium', 'Medium effort'], ['high', 'High effort']]
+const fileName = (p: string) => p.split('/').pop() ?? p
 
 const short = (m: string) => m.split('/').pop() ?? m
 const folderName = (p: string) => p.split('/').filter(Boolean).pop() ?? p
@@ -51,9 +61,20 @@ export function Composer(p: Props) {
             : <button className="send" onClick={submit} disabled={!text.trim()} title="Send">↑</button>}
         </div>
       </div>
-      <button className="folder" onClick={p.onPickFolder} disabled={!p.onPickFolder} title={p.cwd}>
-        <span>🗀</span> {folderName(p.cwd)}
-      </button>
+      <div className="folder">
+        <button className="fbtn" onClick={p.onPickFolder} disabled={!p.onPickFolder} title={p.cwd}>
+          <span>🗀</span> {folderName(p.cwd)}
+        </button>
+        <select className="effort-pick" value={p.effort} onChange={(e) => p.onEffort(e.target.value as Effort)} title="Reasoning effort / model thinking for this chat">
+          {EFFORTS.map(([v, l]) => <option key={v} value={v}>💭 {l}</option>)}
+        </select>
+        {p.memories.map((m) => (
+          <span key={m} className="mem-chip" title={`Memory: ${m}`}>🧠 {fileName(m)}<button onClick={() => p.onRemoveMemory(m)} title="Detach">×</button></span>
+        ))}
+        <button className="fbtn" onClick={p.onAddMemory} title="Attach a shared session export as prior memory">＋ Memory</button>
+        <div className="spacer" />
+        {p.onShare && <button className="fbtn" onClick={p.onShare} title="Export this chat to Markdown">⇪ Share</button>}
+      </div>
     </div>
   )
 }

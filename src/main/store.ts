@@ -2,7 +2,7 @@ import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { Message } from '../engine/types'
 
-export interface SessionRow { id: string; title: string; cwd: string; model: string; created_at: number; updated_at: number; parent_id: string | null; fork_turn: number | null }
+export interface SessionRow { id: string; title: string; cwd: string; model: string; created_at: number; updated_at: number; parent_id: string | null; fork_turn: number | null; reasoning?: string | null; memories?: string | null }
 export interface FolderRow { path: string; added_at: number }
 
 /** SQLite persistence for sessions, the main-agent message history, and UI event log. */
@@ -22,6 +22,8 @@ export class Store {
     const cols = (this.db.prepare('PRAGMA table_info(sessions)').all() as any[]).map((c) => c.name)
     if (!cols.includes('parent_id')) this.db.exec('ALTER TABLE sessions ADD COLUMN parent_id TEXT')
     if (!cols.includes('fork_turn')) this.db.exec('ALTER TABLE sessions ADD COLUMN fork_turn INTEGER')
+    if (!cols.includes('reasoning')) this.db.exec('ALTER TABLE sessions ADD COLUMN reasoning TEXT')
+    if (!cols.includes('memories')) this.db.exec('ALTER TABLE sessions ADD COLUMN memories TEXT')
     this.db.exec('INSERT OR IGNORE INTO folders (path, added_at) SELECT DISTINCT cwd, MIN(created_at) FROM sessions GROUP BY cwd')
   }
 
@@ -43,15 +45,16 @@ export class Store {
     return this.db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as unknown as SessionRow | undefined
   }
   createSession(r: SessionRow) {
-    this.db.prepare('INSERT INTO sessions (id, title, cwd, model, created_at, updated_at, parent_id, fork_turn) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(r.id, r.title, r.cwd, r.model, r.created_at, r.updated_at, r.parent_id, r.fork_turn)
+    this.db.prepare('INSERT INTO sessions (id, title, cwd, model, created_at, updated_at, parent_id, fork_turn, reasoning, memories) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(r.id, r.title, r.cwd, r.model, r.created_at, r.updated_at, r.parent_id, r.fork_turn, r.reasoning ?? null, r.memories ?? null)
     this.addFolder(r.cwd)
   }
-  updateSession(id: string, patch: Partial<Pick<SessionRow, 'title' | 'model' | 'cwd'>>) {
+  updateSession(id: string, patch: Partial<Pick<SessionRow, 'title' | 'model' | 'cwd' | 'reasoning' | 'memories'>>) {
     const cur = this.getSession(id)
     if (!cur) return
     const n = { ...cur, ...patch }
-    this.db.prepare('UPDATE sessions SET title = ?, model = ?, cwd = ?, updated_at = ? WHERE id = ?').run(n.title, n.model, n.cwd, Date.now(), id)
+    this.db.prepare('UPDATE sessions SET title = ?, model = ?, cwd = ?, reasoning = ?, memories = ?, updated_at = ? WHERE id = ?')
+      .run(n.title, n.model, n.cwd, n.reasoning ?? null, n.memories ?? null, Date.now(), id)
   }
   /** Deletes a session; its forks are re-parented to the deleted session's parent. */
   deleteSession(id: string) {

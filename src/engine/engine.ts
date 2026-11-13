@@ -16,6 +16,8 @@ export interface SessionOptions {
   maxTurnsSub?: number
   autoApprove?: boolean
   reasoning?: 'off' | 'low' | 'medium' | 'high'
+  /** Paths of exported sessions to load as prior memory. */
+  memories?: string[]
   /** Prior conversation (without system message) to resume. */
   history?: Message[]
 }
@@ -35,7 +37,7 @@ export class Session {
       adapter: o.adapter, hooks: o.hooks, registry: this.registry, cwd: o.cwd, model: o.model,
       maxConcurrency: o.maxConcurrency ?? 4, maxTurnsSub: o.maxTurnsSub ?? 30, autoApprove: o.autoApprove, reasoning: o.reasoning ?? 'medium'
     })
-    this.messages = [{ role: 'system', content: buildMainSystem(this.registry, o.cwd) }, ...(o.history ?? [])]
+    this.messages = [{ role: 'system', content: buildMainSystem(this.registry, o.cwd, o.memories) }, ...(o.history ?? [])]
     this.manager.onBackgroundDone = (parentId) => {
       if (parentId === MAIN_ID && !this.busy) this.onIdleNotification?.()
     }
@@ -48,6 +50,8 @@ export class Session {
 
   setModel(model: string) { this.o.model = model; this.manager.o.model = model }
   setReasoning(r: 'off' | 'low' | 'medium' | 'high') { this.o.reasoning = r; this.manager.o.reasoning = r }
+  /** Replaces attached memories; takes effect on the next model call. */
+  setMemories(paths: string[]) { this.o.memories = paths; this.messages[0] = { role: 'system', content: buildMainSystem(this.registry, this.o.cwd, paths) } }
 
   /** Sends a user prompt (or, with no prompt, just delivers pending notifications) and runs the main loop. */
   async send(prompt?: string): Promise<{ status: 'completed' | 'failed' | 'cancelled'; text: string }> {
