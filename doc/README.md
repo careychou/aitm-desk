@@ -5,10 +5,10 @@ How AITM Desk works inside. Start here, then read the deep dives.
 | Doc | What it covers |
 |---|---|
 | [agent-framework.md](agent-framework.md) | Agent loop, sub-agents, context passing, request queue, tool calls, permissions, cancellation, system prompt, event model |
-| [memory-compaction.md](memory-compaction.md) | How long chats are compacted: turns, plans, clustering, summarization, incremental merge, turn map, auto-compact |
-| [algorithms-and-internals.md](algorithms-and-internals.md) | Model adapter and streaming, attachment compression and request budget, persistence and forks, ordering, memory export, usage and cost, shell/sql/web_fetch tools, settings |
+| [memory-compaction.md](memory-compaction.md) | How long chats are compacted: turns, plans, clustering, summarization, incremental merge, turn map, compaction model, cache-aware auto-compact |
+| [algorithms-and-internals.md](algorithms-and-internals.md) | Model providers and routing (custom endpoint, Azure OpenAI), adapter and streaming, attachment compression and request budget, persistence and forks, ordering, memory export, usage and cost, shell/sql/web_fetch tools, settings |
 
-> `docs/design.md` and `docs/plan.md` are the original MVP spec and plan. They are historical: compaction, attachments, queueing, usage and modes were added later and are documented here.
+> [`history/design.md`](history/design.md) and [`history/plan.md`](history/plan.md) are the original MVP spec and plan. They are historical: compaction, attachments, queueing, usage and modes were added later and are documented here.
 
 ## Architecture at a glance
 

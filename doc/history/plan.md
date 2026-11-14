@@ -8,7 +8,7 @@
 
 **Tech Stack:** Electron 33, TypeScript, React 18, Vite (electron-vite), vitest, js-yaml, better-sqlite3, marked.
 
-Spec: `docs/superpowers/specs/2026-11-13-aitm-desk-design.md`
+Spec: [`design.md`](design.md)
 Repo: `github.com/careychou/aitm-desk` (local `~/projects/aitm-desk`)
 
 ## File structure

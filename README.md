@@ -6,7 +6,7 @@ AITM Desk is a small macOS app that gives you a GitHub Copilot–like chat exper
 
 It reads skills and agents from the same places Copilot does — `<folder>/.github/` and `~/.copilot/` — so an existing skill/agent library works out of the box.
 
-![AITM Desk: parallel sub-agents, skills, thinking blocks](docs/screenshot.png)
+![AITM Desk: parallel sub-agents, skills, thinking blocks](doc/images/screenshot.png)
 
 ## Download
 
@@ -112,8 +112,7 @@ src/main/      Electron main: settings (safeStorage), SQLite store, IPC
 src/preload/   contextBridge API
 src/renderer/  React UI
 src/shared/    fork/tree, export and usage/pricing helpers shared by main + renderer
-doc/           technical docs: agent framework, memory compaction, algorithms
-docs/          original design spec + implementation plan (historical)
+doc/           technical docs (agent framework, memory compaction, algorithms), history/ (original MVP spec + plan), images/
 ```
 
 ## Status
