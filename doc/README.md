@@ -64,7 +64,7 @@ Everything lives in `~/.aitm-desk` (override with `AITM_HOME`):
 ```
 ~/.aitm-desk/
   aitm.db                  chats, messages, UI items, folders, bookmarks, usage ledger
-  settings.json            settings; the API key is stored encrypted (apiKeyEnc, Electron safeStorage)
+  settings.json            settings; provider API keys are stored encrypted (providers[].apiKeyEnc, Electron safeStorage)
   pricing.json             optional price table for the usage panel
   sessions/<chat-id>/session.db   the per-chat scratch SQL database used by the `sql` tool
 ```

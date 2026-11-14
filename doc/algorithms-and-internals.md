@@ -6,7 +6,7 @@ Contents: [1 Model adapter](#1-model-adapter-and-streaming) · [2 Attachments](#
 
 ## 1. Model adapter and streaming
 
-`src/engine/adapter/openai.ts` talks to any OpenAI-compatible server (`POST {baseUrl}/chat/completions`, `GET {baseUrl}/models`).
+`src/engine/adapter/openai.ts` talks to any OpenAI-compatible server (`POST {baseUrl}/chat/completions`, `GET {baseUrl}/models`) and to Azure OpenAI deployments; `router.ts` routes between several configured providers (below).
 
 **Request body**
 
@@ -35,7 +35,22 @@ Contents: [1 Model adapter](#1-model-adapter-and-streaming) · [2 Attachments](#
 
 **Errors** carry the HTTP status so the loop can decide to retry (once, 1.5 s later, only if nothing was streamed; 5xx, 429, network).
 
-**Provider selection:** Settings, or `AITM_BASE_URL` / `AITM_API_KEY` environment variables; default `http://127.0.0.1:4141/v1`. The API key is stored encrypted with Electron `safeStorage` (`apiKeyEnc` in `settings.json`).
+### Model providers (`router.ts`, `shared/providers.ts`)
+
+Settings → **Model providers** holds a list of providers, like Copilot's "Configured providers". Two kinds exist today:
+
+| Kind | Request | Auth | Models |
+|---|---|---|---|
+| `openai` (Custom endpoint) | `POST {baseUrl}/chat/completions` | `Authorization: Bearer <key>` | `GET {baseUrl}/models` |
+| `azure` (Azure OpenAI) | `POST {host}/openai/deployments/{deployment}/chat/completions?api-version={v}` (default `2025-04-01-preview`; a trailing `/openai` or `/openai/v1` on the host is stripped) | `api-key: <key>` | the configured deployment names (no network call) |
+
+Azure differences handled by the adapter: `max_completion_tokens` instead of `max_tokens`, `reasoning_effort` without `include_reasoning`, and a single retry without `reasoning_effort` when a non-reasoning deployment (e.g. gpt-4o) answers 400 `unsupported_parameter`. Streaming, tool calls and usage are the same OpenAI wire format, so everything downstream (assembler, loop, usage ledger) is unchanged.
+
+`ProviderRouter` implements the same `ModelAdapter` interface. Model ids from the **first (primary) provider stay bare**, so chats created before providers existed keep working. Bare ids are pinned to that provider: if it is disabled they fail with a clear error instead of silently going to another provider, and there is no reordering (which would re-point existing chats); models of other providers are qualified as `<providerId>::<model>` (e.g. `azure::gpt-5`). `stream()` splits the prefix, picks the provider's adapter and sends the bare model. `listGroups()` asks every provider in parallel and returns per-provider errors, so one broken provider does not hide the others; the Composer shows the groups as `<optgroup>`s and displays the bare short name. Disabled providers are skipped and their qualified ids fail with a clear "not configured or is disabled" error.
+
+The main process holds one router and an adapter **proxy** (`{ stream: (r, s) => currentRouter.stream(r, s) }`) that every Session gets; saving settings drops the router, so open chats use the new providers on their next model call without being recreated.
+
+Keys are stored per provider, encrypted with Electron `safeStorage` (`providers[].apiKeyEnc` in `settings.json`). `migrateProviders` (pure, tested) converts pre-0.8 settings (`baseUrl` + `apiKeyEnc`) into the primary provider. The headless CLI still uses one endpoint from `AITM_BASE_URL` / `AITM_API_KEY` (default `http://127.0.0.1:4141/v1`).
 
 ## 2. Attachment pipeline
 
@@ -179,14 +194,16 @@ cost = ( uncached × input
 
 | Setting | Default | Notes |
 |---|---|---|
-| `baseUrl`, `apiKey` | `http://127.0.0.1:4141/v1`, – | Env `AITM_BASE_URL`, `AITM_API_KEY` override defaults |
+| `providers` | one Custom endpoint `http://127.0.0.1:4141/v1` | Model providers (§1); env `AITM_BASE_URL`, `AITM_API_KEY` seed the default |
 | `defaultModel` | `anthropic/claude-sonnet-5` | Per chat selectable |
 | `defaultCwd` | home | Folder for new chats |
 | `maxConcurrency` | 4 | Simultaneous model requests per chat (all agents) |
 | `maxTurnsMain` / `maxTurnsSub` | 50 / 30 | Loop iteration caps |
 | `reasoning` | `medium` | `off`/`low`/`medium`/`high`; per chat override |
 | `defaultMode` | `autopilot` | New chats: `autopilot` or `interactive` |
-| `autoCompact`, `compactThreshold`, `compactKeepRecent` | `suggest`, 80,000, 2 | See memory-compaction.md |
+| `autoCompact`, `compactThreshold`, `compactKeepRecent` | `suggest`, 80,000, 2 | See memory-compaction.md §9 |
+| `compactModel` | chat's model | Summaries / clustering model, falls back to the chat model |
+| `compactIdleMinutes`, `compactHardLimit`, `compactMinGain` | 5, 120,000, 20,000 | Cache-aware auto-compact policy (memory-compaction.md §9.1) |
 | `imageMaxEdge`, `imageQuality`, `imageMaxKB`, `docMaxChars` | 1568, 82, 1500, 80,000 | Attachment compression (§2) |
 | `requestMaxMB`, `imageTurns` | 20, 4 | Request budget (§3) |
 | `usageCommand`, `pricingPath`, `dailyBudget` | auto, auto, 0 | Usage panel (§7) |

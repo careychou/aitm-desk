@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { applyCompaction, clusterLexical, keepLastPlan, normalizeClusters, planTurns, priorSummary, splitHistoryTurns, clusterTurns } from '../src/engine/compact'
+import { autoCompactDecision, applyCompaction, clusterLexical, keepLastPlan, normalizeClusters, planTurns, priorSummary, splitHistoryTurns, clusterTurns } from '../src/engine/compact'
 import { Session } from '../src/engine/engine'
 import { COMPACT_TAG, sliceMessagesAtTurn } from '../src/shared/fork'
 import type { ChatRequest, Delta, Message, ModelAdapter } from '../src/engine/types'
@@ -78,5 +78,63 @@ describe('compaction', () => {
     const next = applyCompaction(hist, 'S', [0, 2])
     expect(splitHistoryTurns(next).map((t) => t.user.slice(0, 7))).toEqual(['analyze', 'compare'])
     expect(next[0].role).toBe('user')
+  })
+})
+
+describe('compaction model', () => {
+  const hooks = (events: any[]) => ({ onEvent: (e: any) => events.push(e), requestPermission: async () => 'allow' as const, askUser: async () => '' })
+
+  it('summarizes with the compaction model and reports its usage under the compact agent', async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cmp-'))
+    const calls: string[] = []
+    const ad: ModelAdapter = { async *stream(r) { calls.push(r.model); yield { type: 'text', text: 'SUM' }; yield { type: 'usage', prompt: 900, completion: 40 }; yield { type: 'finish', reason: 'stop' } } }
+    const events: any[] = []
+    const s = new Session({ adapter: ad, cwd, model: 'big', compactModel: () => 'cheap', home: path.join(cwd, 'h'), history: hist, hooks: hooks(events) })
+    const r = await s.compact({ keep: [3], summarize: [0, 1, 2] })
+    expect(calls).toEqual(['cheap'])
+    expect(r.model).toBe('cheap')
+    expect(events).toContainEqual(expect.objectContaining({ kind: 'usage', agentId: 'compact', model: 'cheap', prompt: 900 }))
+  })
+
+  it("falls back to the chat's model when the compaction model fails", async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cmp-'))
+    const calls: string[] = []
+    const ad: ModelAdapter = { async *stream(r) { calls.push(r.model); if (r.model === 'gone') throw new Error('404 model not found'); yield { type: 'text', text: 'SUM' }; yield { type: 'finish', reason: 'stop' } } }
+    const s = new Session({ adapter: ad, cwd, model: 'big', compactModel: () => 'gone', home: path.join(cwd, 'h'), history: hist, hooks: hooks([]) })
+    const r = await s.compact({ keep: [3], summarize: [0, 1, 2] })
+    expect(calls).toEqual(['gone', 'big'])
+    expect(r).toMatchObject({ model: 'big', summary: 'SUM' })
+  })
+
+  it("groups turns with the chat's model when the compaction model fails", async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cmp-'))
+    const calls: string[] = []
+    const ad: ModelAdapter = { async *stream(r) { calls.push(r.model); if (r.model === 'gone') throw new Error('404'); yield { type: 'text', text: '{"clusters":[{"label":"Beef","turns":[1,3]},{"label":"Misc","turns":[2,4]}]}' }; yield { type: 'finish', reason: 'stop' } } }
+    const s = new Session({ adapter: ad, cwd, model: 'big', compactModel: () => 'gone', home: path.join(cwd, 'h'), history: hist, hooks: hooks([]) })
+    const r = await s.analyzeTurns()
+    expect(calls).toEqual(['gone', 'big'])
+    expect(r).toMatchObject({ method: 'model', model: 'big' })
+  })
+})
+
+describe('autoCompactDecision (cache-aware)', () => {
+  const big = (n: number, chars: number) => Array.from({ length: n }, (_, i) => ({ index: i, messages: [{ role: 'user' as const, content: 'x'.repeat(chars) }], user: '', answer: '', tools: [] }))
+  const base = { mode: 'auto' as const, tokens: 100_000, threshold: 80_000, hardLimit: 120_000, idleMinutes: 5, idleMs: 0, turns: big(10, 40_000), keepRecent: 2, minGain: 20_000 }
+
+  it('waits while the prompt cache is warm, compacts once idle', () => {
+    expect(autoCompactDecision(base)).toMatchObject({ compact: false, reason: 'cache-warm' })
+    expect(autoCompactDecision({ ...base, idleMs: 6 * 60_000 })).toMatchObject({ compact: true, reason: 'idle' })
+  })
+  it('compacts at the hard limit even when the cache is warm', () => {
+    expect(autoCompactDecision({ ...base, tokens: 130_000 })).toMatchObject({ compact: true, reason: 'hard-limit' })
+  })
+  it('skips small gains, short chats, under-threshold, and non-auto modes', () => {
+    expect(autoCompactDecision({ ...base, idleMs: 1e9, turns: big(10, 400) })).toMatchObject({ compact: false, reason: 'small-gain' })
+    expect(autoCompactDecision({ ...base, idleMs: 1e9, turns: big(2, 400_000) })).toMatchObject({ compact: false, reason: 'too-few-turns' })
+    expect(autoCompactDecision({ ...base, idleMs: 1e9, tokens: 50_000 })).toMatchObject({ compact: false, reason: 'under-threshold' })
+    expect(autoCompactDecision({ ...base, idleMs: 1e9, mode: 'suggest' })).toMatchObject({ compact: false, reason: 'off' })
+  })
+  it('idle wait 0 compacts immediately', () => {
+    expect(autoCompactDecision({ ...base, idleMinutes: 0 })).toMatchObject({ compact: true, reason: 'no-wait' })
   })
 })

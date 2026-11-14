@@ -164,3 +164,42 @@ export function planTurns(turns: Turn[], plan: CompactPlan) {
     dropped: turns.filter((t) => !keep.has(t.index) && !sum.has(t.index))
   }
 }
+
+export interface AutoCompactInput {
+  mode: 'off' | 'suggest' | 'auto'
+  tokens: number
+  threshold: number
+  /** Compact regardless of idle time at or above this size. */
+  hardLimit: number
+  /** Required idle time (prompt cache expired) before compacting; 0 = no wait. */
+  idleMinutes: number
+  /** Time since the chat's last model call. */
+  idleMs: number
+  turns: Turn[]
+  keepRecent: number
+  /** Minimum tokens that must be folded into the summary to be worth it. */
+  minGain: number
+}
+
+export type AutoCompactDecision =
+  | { compact: true; reason: 'hard-limit' | 'idle' | 'no-wait'; gain: number }
+  | { compact: false; reason: 'off' | 'under-threshold' | 'too-few-turns' | 'small-gain' | 'cache-warm'; gain: number }
+
+/**
+ * Cache-aware auto-compact policy. Compaction rewrites the history prefix, so the provider's prompt cache
+ * (Anthropic: 5 min TTL) is lost and the next call pays a cache write. It pays off only if the chat goes on,
+ * so we compact when (a) the chat is idle long enough that the cache has expired anyway, or (b) it is so
+ * large that staying under the context limit matters more than one cache miss. Pure.
+ */
+export function autoCompactDecision(i: AutoCompactInput): AutoCompactDecision {
+  const cut = Math.max(0, i.turns.length - i.keepRecent)
+  const gain = i.turns.slice(0, cut).reduce((n, t) => n + estimateTokens(t.messages), 0)
+  if (i.mode !== 'auto') return { compact: false, reason: 'off', gain }
+  if (i.tokens <= i.threshold) return { compact: false, reason: 'under-threshold', gain }
+  if (cut === 0) return { compact: false, reason: 'too-few-turns', gain }
+  if (gain < i.minGain) return { compact: false, reason: 'small-gain', gain }
+  if (i.hardLimit > 0 && i.tokens >= i.hardLimit) return { compact: true, reason: 'hard-limit', gain }
+  if (i.idleMinutes <= 0) return { compact: true, reason: 'no-wait', gain }
+  if (i.idleMs >= i.idleMinutes * 60_000) return { compact: true, reason: 'idle', gain }
+  return { compact: false, reason: 'cache-warm', gain }
+}

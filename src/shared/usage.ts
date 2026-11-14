@@ -24,7 +24,7 @@ export interface LedgerRow { ts: number; session_id: string; title: string | nul
 
 /** "anthropic/claude-opus-5-5" → the pricing key ("claude-opus-5-5", or "glm-5.2-maas" for "glm-5.2"). */
 export function pricingKey(model: string, pricing: Pricing | null): string {
-  const base = model.split('/').pop()!.toLowerCase().replace(/@.*$/, '')
+  const base = model.replace(/^.*::/, '').split('/').pop()!.toLowerCase().replace(/@.*$/, '')
   if (!pricing) return base
   for (const k of [base, `${base}-maas`, base.replace(/-maas$/, '')]) if (pricing.models[k]) return k
   return base

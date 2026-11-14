@@ -5,6 +5,12 @@ import { fitRequest, type RequestBudget } from '../content'
 export interface AdapterConfig {
   baseUrl: string
   apiKey: string
+  /** `openai` (default): any OpenAI-compatible endpoint. `azure`: Azure OpenAI deployments. */
+  kind?: 'openai' | 'azure'
+  /** Azure: api-version query parameter. */
+  apiVersion?: string
+  /** Azure: deployment names, used as the model ids. */
+  deployments?: string[]
   /** Read on every request so settings changes apply to open chats. */
   budget?: () => RequestBudget
 }
@@ -20,11 +26,32 @@ function wireMessages(msgs: Message[], budget?: RequestBudget): unknown[] {
   })
 }
 
+export const AZURE_API_VERSION = '2025-04-01-preview'
+
+/** Azure resource host without trailing slash or /openai suffix. */
+const azureHost = (u: string) => u.trim().replace(/\/+$/, '').replace(/\/openai(\/v1)?$/, '')
+
 export class OpenAIAdapter implements ModelAdapter {
   constructor(private cfg: AdapterConfig) {}
 
+  private get azure() { return this.cfg.kind === 'azure' }
+
+  private headers(): Record<string, string> {
+    return this.azure ? { 'api-key': this.cfg.apiKey } : { authorization: `Bearer ${this.cfg.apiKey}` }
+  }
+
+  private chatUrl(model: string): string {
+    if (!this.azure) return `${this.cfg.baseUrl.replace(/\/$/, '')}/chat/completions`
+    return `${azureHost(this.cfg.baseUrl)}/openai/deployments/${encodeURIComponent(model)}/chat/completions?api-version=${encodeURIComponent(this.cfg.apiVersion || AZURE_API_VERSION)}`
+  }
+
   async listModels(): Promise<string[]> {
-    const r = await fetch(`${this.cfg.baseUrl.replace(/\/$/, '')}/models`, { headers: { authorization: `Bearer ${this.cfg.apiKey}` } })
+    // Azure's data plane has no deployment listing; the configured deployments are the models
+    if (this.azure) {
+      if (!this.cfg.baseUrl.trim()) throw new Error('resource host is not set')
+      return (this.cfg.deployments ?? []).map((d) => d.trim()).filter(Boolean)
+    }
+    const r = await fetch(`${this.cfg.baseUrl.replace(/\/$/, '')}/models`, { headers: this.headers() })
     if (!r.ok) throw new Error(`models ${r.status}: ${(await r.text()).slice(0, 300)}`)
     const j: any = await r.json()
     return (j.data ?? []).map((m: any) => m.id)
@@ -35,18 +62,28 @@ export class OpenAIAdapter implements ModelAdapter {
       model: req.model,
       messages: wireMessages(req.messages, this.cfg.budget?.()),
       stream: true,
-      stream_options: { include_usage: true },
-      max_tokens: req.maxTokens ?? 16000
+      stream_options: { include_usage: true }
     }
+    // Azure reasoning models (o-series, GPT-5) only accept max_completion_tokens; all current Azure models take it
+    body[this.azure ? 'max_completion_tokens' : 'max_tokens'] = req.maxTokens ?? 16000
     if (req.tools?.length) body.tools = req.tools
-    if (req.reasoning && req.reasoning !== 'off') { body.include_reasoning = true; body.reasoning_effort = req.reasoning }
+    if (req.reasoning && req.reasoning !== 'off') {
+      body.reasoning_effort = req.reasoning
+      if (!this.azure) body.include_reasoning = true
+    }
     const think = new ThinkSplitter()
-    const res = await fetch(`${this.cfg.baseUrl.replace(/\/$/, '')}/chat/completions`, {
+    const post = () => fetch(this.chatUrl(req.model), {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${this.cfg.apiKey}` },
+      headers: { 'content-type': 'application/json', ...this.headers() },
       body: JSON.stringify(body),
       signal
     })
+    let res = await post()
+    // Azure non-reasoning deployments (e.g. gpt-4o) reject reasoning_effort: retry once without it
+    if (this.azure && res.status === 400 && body.reasoning_effort) {
+      const t = await res.clone().text().catch(() => '')
+      if (/reasoning_effort|reasoning\.effort|unsupported_parameter/i.test(t)) { delete body.reasoning_effort; res = await post() }
+    }
     if (!res.ok || !res.body) {
       const t = await res.text().catch(() => '')
       let msg = t

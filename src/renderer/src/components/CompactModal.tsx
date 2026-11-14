@@ -113,7 +113,7 @@ export function CompactModal({ session, keepRecentDefault, onClose, onDone }: Pr
               <>
                 <div className="turn-pick-bar plain">
                   <div className="seg small">
-                    <button className={view === 'clusters' ? 'on' : ''} onClick={() => setView('clusters')}>Related turns ({a.method === 'model' ? 'AI' : 'keywords'})</button>
+                    <button className={view === 'clusters' ? 'on' : ''} onClick={() => setView('clusters')}>Related turns ({a.method === 'model' ? `AI · ${a.model.split('::').pop()!.split('/').pop()}` : 'keywords'})</button>
                     <button className={view === 'turns' ? 'on' : ''} onClick={() => setView('turns')}>All turns</button>
                   </div>
                   <span className="muted small-label">Set all:</span>

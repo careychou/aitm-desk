@@ -134,7 +134,7 @@ function CompactMarker({ it }: { it: Extract<Item, { t: 'compact' }> }) {
   return (
     <div className="compact-marker">
       <button onClick={() => setOpen(!open)}>
-        <span className="line" /><span className="lbl">⇲ {it.auto ? 'Auto-compacted' : 'Compacted'}: {it.summarized} turn(s) summarized{it.dropped ? `, ${it.dropped} dropped` : ''} · ~{k(it.before)} → ~{k(it.after)} tokens {open ? '▾' : '▸'}</span><span className="line" />
+        <span className="line" /><span className="lbl">⇲ {it.auto ? 'Auto-compacted' : 'Compacted'}: {it.summarized} turn(s) summarized{it.dropped ? `, ${it.dropped} dropped` : ''} · ~{k(it.before)} → ~{k(it.after)} tokens{it.model ? ` · by ${it.model.split('::').pop()!.split('/').pop()}` : ''} {open ? '▾' : '▸'}</span><span className="line" />
       </button>
       {open && (
         <div className="compact-summary">

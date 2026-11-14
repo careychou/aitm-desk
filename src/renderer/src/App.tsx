@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AttachMeta, BookmarkRow, FolderRow, Listing, PreparedAttachment, PushEvent, RegistryInfo, SessionRow } from '../../shared/api'
+import type { AttachMeta, BookmarkRow, FolderRow, Listing, ModelGroup, PreparedAttachment, PushEvent, RegistryInfo, SessionRow } from '../../shared/api'
 import { insertBeforeTurn } from '../../shared/fork'
 import { applyEvent, runningBackground, settle, type Item } from './state'
 import { ItemList } from './components/Cards'
@@ -36,6 +36,7 @@ export function App() {
   const [busy, setBusy] = useState(false)
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set())
   const [models, setModels] = useState<string[]>([])
+  const [modelGroups, setModelGroups] = useState<ModelGroup[]>([])
   const [modelErr, setModelErr] = useState('')
   const [draftModel, setDraftModel] = useState('')
   const [draftCwd, setDraftCwd] = useState('')
@@ -97,7 +98,7 @@ export function App() {
 
   const refreshModels = useCallback(async () => {
     const r = await window.desk.listModels()
-    setModels(r.models); setModelErr(r.error ?? '')
+    setModels(r.models); setModelGroups(r.groups ?? []); setModelErr(r.error ?? '')
   }, [])
 
   useEffect(() => {
@@ -257,7 +258,7 @@ export function App() {
   const parent = current?.parent_id ? sessions.find((s) => s.id === current.parent_id) : null
 
   const composer = (
-    <Composer busy={busy} restore={restore} model={model} models={models} cwd={cwd} onModel={setModel}
+    <Composer busy={busy} restore={restore} model={model} models={models} groups={modelGroups} cwd={cwd} onModel={setModel}
       onPickFolder={current ? undefined : () => setFolderMenu(!folderMenu)} onSend={send} onStop={() => current && window.desk.stop(current.id)} autoFocus
       effort={effort} onEffort={setEffort} mode={mode} onMode={setMode} memories={memories} onAddMemory={addMemory} onRemoveMemory={(m) => setMemories(memories.filter((x) => x !== m))}
       onShare={current && !busy ? async () => { await persistCurrent(); setSharing(current) } : undefined}
@@ -323,7 +324,7 @@ export function App() {
             <div className="bottom">
               {overThreshold && !busy && (
                 <div className="compact-banner">
-                  This chat is long (~{Math.round(tokens / 1000)}k tokens).{compactCfg.mode === 'auto' ? ' It will be auto-compacted before your next message, or' : ''} Compact it to keep the agent focused and fast.
+                  This chat is long (~{Math.round(tokens / 1000)}k tokens).{compactCfg.mode === 'auto' ? ' It will be auto-compacted once it has been idle long enough for the prompt cache to expire (or right away if it gets very large), or' : ''} Compact it to keep the agent focused and fast.
                   <button onClick={() => current && openCompact(current)}>Choose turns…</button>
                 </div>
               )}

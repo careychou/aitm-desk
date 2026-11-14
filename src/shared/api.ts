@@ -2,17 +2,18 @@ import type { UsageReport } from './usage'
 import type { AgentEvent, PermissionDecision, PermissionKind } from '../engine/types'
 import type { SessionRow, FolderRow, BookmarkRow } from '../main/store'
 import type { Settings } from '../main/settings'
+import type { ModelGroup, ProviderEntry } from './providers'
 import type { Attachment } from '../engine/content'
 import type { AttachMeta } from './attach'
 
 export type { Attachment, AttachMeta }
 export interface AttachInput { path?: string; name?: string; data?: Uint8Array }
 export interface PreparedAttachment { id: string; att?: Attachment; meta: AttachMeta; error?: string }
-export type { AgentEvent, SessionRow, FolderRow, BookmarkRow, Settings, PermissionDecision }
+export type { AgentEvent, SessionRow, FolderRow, BookmarkRow, Settings, PermissionDecision, ModelGroup, ProviderEntry }
 export interface Listing { sessions: SessionRow[]; folders: FolderRow[]; bookmarks: BookmarkRow[] }
-export interface CompactItem { t: 'compact'; auto: boolean; summarized: number; dropped: number; before: number; after: number; summary: string; keptTurns?: number[]; summarizedTurns?: number[]; droppedTurns?: number[] }
+export interface CompactItem { t: 'compact'; auto: boolean; model?: string; summarized: number; dropped: number; before: number; after: number; summary: string; keptTurns?: number[]; summarizedTurns?: number[]; droppedTurns?: number[] }
 export interface TurnInfo { index: number; user: string; answer: string; tools: string[]; tokens: number }
-export interface TurnAnalysis { turns: TurnInfo[]; clusters: Array<{ label: string; reason?: string; turns: number[] }>; method: 'model' | 'lexical'; hasPriorSummary: boolean; tokens: number; uiTurns: number[] }
+export interface TurnAnalysis { turns: TurnInfo[]; clusters: Array<{ label: string; reason?: string; turns: number[] }>; method: 'model' | 'lexical'; model: string; hasPriorSummary: boolean; tokens: number; uiTurns: number[] }
 
 /** Messages pushed from main to renderer. */
 export type PushEvent =
@@ -65,7 +66,9 @@ export interface DeskApi {
   setModel(sessionId: string, model: string): Promise<void>
   respondPermission(requestId: string, decision: PermissionDecision): Promise<void>
   respondAsk(requestId: string, answer: string): Promise<void>
-  listModels(): Promise<{ models: string[]; error?: string }>
+  listModels(): Promise<{ models: string[]; groups: ModelGroup[]; error?: string }>
+  /** Lists the models of an unsaved provider entry (Settings → Model providers → Test). */
+  testProvider(p: ProviderEntry): Promise<{ models: string[]; error?: string }>
   pickFolder(): Promise<string | null>
   getSettings(): Promise<Settings>
   getUsage(days: number): Promise<UsageReport>

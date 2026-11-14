@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AttachInput, PreparedAttachment } from '../../../shared/api'
+import type { AttachInput, ModelGroup, PreparedAttachment } from '../../../shared/api'
+import { bareModel } from '../../../shared/providers'
 
 type Chip = PreparedAttachment & { pending?: boolean }
 
@@ -9,6 +10,8 @@ interface Props {
   restore?: { text: string; n: number }
   model: string
   models: string[]
+  /** Models per provider; shown as option groups when more than one provider is configured. */
+  groups?: ModelGroup[]
   cwd: string
   onModel(m: string): void
   onPickFolder?: () => void
@@ -32,7 +35,7 @@ export type Effort = 'off' | 'low' | 'medium' | 'high'
 const EFFORTS: Array<[Effort, string]> = [['off', 'Thinking off'], ['low', 'Low effort'], ['medium', 'Medium effort'], ['high', 'High effort']]
 const fileName = (p: string) => p.split('/').pop() ?? p
 
-const short = (m: string) => m.split('/').pop() ?? m
+const short = (m: string) => bareModel(m).split('/').pop() ?? m
 const folderName = (p: string) => p.split('/').filter(Boolean).pop() ?? p
 
 export function Composer(p: Props) {
@@ -121,7 +124,10 @@ export function Composer(p: Props) {
         <div className="composer-bar">
           <button className="clip" onClick={pick} title="Attach files (or paste / drop them). Images are downscaled and documents trimmed to save tokens.">📎</button>
           <select className="model-pick" value={p.model} onChange={(e) => p.onModel(e.target.value)} title={p.model}>
-            {(p.models.includes(p.model) ? p.models : [p.model, ...p.models]).map((m) => <option key={m} value={m}>{short(m)}</option>)}
+            {!p.models.includes(p.model) && <option value={p.model}>{short(p.model)}</option>}
+            {(p.groups?.length ?? 0) > 1
+              ? p.groups!.filter((g) => g.models.length).map((g) => <optgroup key={g.provider} label={g.name}>{g.models.map((m) => <option key={m} value={m}>{short(m)}</option>)}</optgroup>)
+              : p.models.map((m) => <option key={m} value={m}>{short(m)}</option>)}
           </select>
           <div className="spacer" />
           {p.busy && <button className="send stop" onClick={p.onStop} title="Stop (queued prompts go back in the box)">■</button>}

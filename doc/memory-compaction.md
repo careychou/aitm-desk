@@ -2,7 +2,7 @@
 
 Long chats outgrow the model's context window and get slower and more expensive on every request (the whole history is re-sent each time). Compaction replaces old history with a compact summary **plus** the turns you choose to keep verbatim, so the agent keeps the important facts without carrying every message.
 
-Source: `src/engine/compact.ts` (algorithms), `Session.compact` in `engine.ts`, orchestration in `src/main/index.ts` (`compactSession`, auto-compact in `run`), UI in `CompactModal.tsx`, turn mapping in `src/shared/fork.ts`.
+Source: `src/engine/compact.ts` (algorithms and the auto-compact policy), `Session.compact` in `engine.ts`, orchestration in `src/main/index.ts` (`compactSession`, auto-compact in `run`), UI in `CompactModal.tsx`, turn mapping in `src/shared/fork.ts`.
 
 ## 1. Design goals
 
@@ -163,19 +163,66 @@ flowchart TD
   B -- yes --> BN[banner: chat is long, Choose turns...]
   B -- no --> S
   BN --> S
-  A -- auto --> C{tokens > threshold AND turns > keepRecent}
-  C -- yes --> K[compact with keepLastPlan keepRecent, then send]
-  C -- no --> S
+  A -- auto --> D[autoCompactDecision]
+  D -- compact --> K[compact with keepLastPlan keepRecent, then send]
+  D -- skip --> S
   K --> S
 ```
+
+All of these live in **Settings → Memory compaction**:
 
 | Setting | Default | Meaning |
 |---|---|---|
 | `autoCompact` | `suggest` | `off`, `suggest` (banner only) or `auto` |
-| `compactThreshold` | 80,000 tokens | Estimated size that triggers the banner / auto-compaction |
+| `compactThreshold` | 80,000 tokens | Estimated size above which a chat is a candidate (banner / auto) |
 | `compactKeepRecent` | 2 | Turns kept verbatim by auto-compaction |
+| `compactModel` | `''` = the chat's model (Pearl build: `google/gemini-3.8-flash`) | Model for summaries and topic clustering |
+| `compactIdleMinutes` | 5 | Auto: wait until the chat's last model call is at least this old (0 = no wait) |
+| `compactHardLimit` | 120,000 tokens | Auto: compact even when the cache is warm at or above this size (0 = never override the wait) |
+| `compactMinGain` | 20,000 tokens | Auto: skip unless at least this much would be folded into the summary |
 
-Auto-compaction runs *before* the new prompt is sent and uses the simple keep-last-N plan (no clustering call) so it adds only one model call. If it fails (e.g. the endpoint is down) an `Auto-compact failed: …` error is shown, the history is left untouched (it is only replaced after a summary exists) and the prompt is still sent. Manual compaction goes through the dialog: choose mode, review the buckets, see the before/after estimate, confirm.
+Auto-compaction runs *before* the new prompt is sent and uses the simple keep-last-N plan (no clustering call) so it adds only one model call. If it fails (e.g. the endpoint is down) an `Auto-compact failed: …` error is shown, the history is left untouched (it is only replaced after a summary exists) and the prompt is still sent. Manual compaction goes through the dialog: choose mode, review the buckets, see the before/after estimate, confirm. Manual compaction is never blocked by the auto rules: you decide.
+
+### 9.1 Compaction and the prompt cache (why auto waits)
+
+Providers cache the *prefix* of a request. With Claude (via the proxy's cache breakpoints) a cached prefix is read at ~0.1× the input price, writing it costs ~1.25×, and an entry lives ~5 minutes after its last use. Compaction **rewrites the beginning of the history**, so the next request after compacting cannot reuse the old cache: it pays one cache write on the new, shorter prefix. That is the whole cost; it does not "break" anything for later turns.
+
+Worked example, 100k-token chat compacted to 20k, Claude input price *p* per token:
+
+| | Per turn after this point |
+|---|---|
+| Not compacted, cache warm | 100k × 0.1*p* = **10k*p*** (cache read) |
+| Compacted | 20k × 0.1*p* = **2k*p*** (cache read), after a one-time 20k × 1.25*p* = 25k*p* write + the summarize call |
+
+The compacted chat saves ~8k*p* per turn against a warm cache. The one-time cost is the 25k*p* write plus the summarize call, which reads up to ~80k tokens of (clipped) transcript:
+
+- summary on the **same model** (~80k*p* input + output) → ~105k*p* one-time → break-even after **~13–15 turns**;
+- summary on a **cheap compaction model** (e.g. ~1/10 the price) → ~33k*p* → break-even after **~4 turns**;
+- if the cache had **already expired**, the uncompacted chat would itself pay a full 100k write on the next turn, so compacting is ahead immediately.
+
+That is why the defaults pair an idle wait with a separate, cheaper compaction model. Compacting is therefore the right call for long chats you keep using. It is wasteful when:
+
+- the chat is about to end anyway (the write is never earned back);
+- it is done every few turns on small gains (each compaction pays a new write and a summary call for little reduction);
+- the cache is warm and you are in a rapid back-and-forth (you throw away a cheap 0.1× prefix right now).
+
+`autoCompactDecision` (pure, in `compact.ts`) encodes exactly that:
+
+```
+gain = estimated tokens of the turns that would be summarized (all but the last keepRecent)
+compact  iff  mode = auto
+         and  tokens > threshold
+         and  gain ≥ minGain                         (skip small, frequent compactions)
+         and  ( tokens ≥ hardLimit                    (too big: context limit and per-turn cost win)
+                or idleMinutes = 0
+                or now − lastModelCall ≥ idleMinutes ) (cache already cold: compaction is free of cache loss)
+```
+
+`lastModelCall` is tracked in memory per chat from the main and sub-agent usage events (not from compaction's own calls), and falls back to the chat's `updated_at` after an app restart. A skipped decision is silent; the banner still offers manual compaction. The decision returns a reason (`cache-warm`, `small-gain`, `hard-limit`, `idle`, …) that the tests assert.
+
+### 9.2 Compaction model
+
+Summarizing is an extraction task; a fast, cheap model does it well, so `compactModel` lets you send summaries and clustering to a different model than the chat (e.g. Gemini Flash while chatting with Claude Opus). The chat's own cache is unaffected: the summarize call is a separate request with its own prefix. If the compaction model fails (not offered by the current provider, quota, network) `Session` retries once with the chat's model, so compaction never fails just because of this setting. Compaction calls are recorded in the usage ledger under the agent id `compact`, so their cost shows in **AI usage**; the compaction card shows which model wrote the summary.
 
 ## 10. What is kept and what is lost
 
@@ -191,11 +238,11 @@ Practical advice: keep the turns that contain the *current task state* (files be
 
 - **Summaries are lossy and model-written.** A summarizer can omit a detail or state one with false confidence. Mitigation: the prompt asks for decisions with reasons and specifics (paths, numbers, commands), the summary is shown to the user, and verbatim keep is always available.
 - **chars/4 is approximate.** It can be off by ±30% (code and non-English text tokenize denser). Thresholds are therefore conservative defaults, not precise limits.
-- **Cost:** one model call (plus one optional clustering call). The summarize call is bounded by the clipping limits, so cost scales with the number of turns summarized, not their raw size.
+- **Cost:** one model call (plus one optional clustering call) on the compaction model, and one prompt-cache write on the next chat request (see 9.1). The summarize call is bounded by the clipping limits, so cost scales with the number of turns summarized, not their raw size.
 - **Single-link lexical clustering** can chain unrelated turns through a common word; that is why clusters are advisory and shown with labels.
 - **No semantic search over dropped content.** Dropped turns are gone from the model's view; only exports (see algorithms-and-internals.md) preserve them outside the chat.
 - **Sub-agent transcripts** are never in the live history (only their final result inside the parent's `task` tool result), so they add nothing to compact.
 
 ## 12. Tests
 
-`tests/compact.test.ts` covers turn splitting (notifications and summary messages do not start turns), plan semantics (keep wins), normalization (duplicates, unknown indexes, leftovers), lexical clustering, incremental merge via `priorSummary`, `applyCompaction` ordering, and `Session.compact` with non-contiguous keep/summarize/drop sets. `tests/fork.test.ts` covers fork slicing, the live turn map and ordering helpers.
+`tests/compact.test.ts` covers turn splitting (notifications and summary messages do not start turns), plan semantics (keep wins), normalization (duplicates, unknown indexes, leftovers), lexical clustering, incremental merge via `priorSummary`, `applyCompaction` ordering, `Session.compact` with non-contiguous keep/summarize/drop sets, the compaction model (usage events and fallback to the chat model) and every branch of `autoCompactDecision`. `tests/fork.test.ts` covers fork slicing, the live turn map and ordering helpers.

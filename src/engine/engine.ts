@@ -26,7 +26,12 @@ export interface SessionOptions {
   stateDir?: string
   /** Prior conversation (without system message) to resume. */
   history?: Message[]
+  /** Model for summarizing/clustering during compaction; read on each use. Empty = the chat's model. */
+  compactModel?: () => string
 }
+
+/** agentId used for usage events from compaction calls. */
+export const COMPACT_ID = 'compact'
 
 export const MAIN_ID = 'main'
 
@@ -134,13 +139,44 @@ export class Session {
   get history(): Message[] { return this.messages.slice(1) }
   get tokenEstimate() { return estimateTokens(this.messages) }
 
+  /** The model compaction uses (Settings → Memory compaction), or the chat's own model. */
+  get compactModel(): string { return this.o.compactModel?.().trim() || this.o.model }
+
+  /** The chat adapter, reporting usage of compaction calls under COMPACT_ID. */
+  private compactAdapter(model: string): ModelAdapter {
+    const inner = this.o.adapter, hooks = this.o.hooks
+    return {
+      async *stream(req, signal) {
+        for await (const d of inner.stream(req, signal)) {
+          if (d.type === 'usage') hooks.onEvent({ kind: 'usage', agentId: COMPACT_ID, model, prompt: d.prompt, completion: d.completion, cached: d.cached, cacheWrite: d.cacheWrite })
+          yield d
+        }
+      }
+    }
+  }
+
+  /** Runs `fn` with the compaction model, falling back to the chat model if that fails (e.g. not offered by the provider). */
+  private async withCompactModel<T>(fn: (adapter: ModelAdapter, model: string) => Promise<T>): Promise<T & { model: string }> {
+    const first = this.compactModel
+    try { return { ...(await fn(this.compactAdapter(first), first)), model: first } } catch (e) {
+      if (first === this.o.model) throw e
+      return { ...(await fn(this.compactAdapter(this.o.model), this.o.model)), model: this.o.model }
+    }
+  }
+
   /** Turn digests plus topic clusters for the compaction picker. */
   async analyzeTurns(signal?: AbortSignal) {
     const turns = splitHistoryTurns(this.history)
-    const { clusters, method } = await clusterTurns(this.o.adapter, this.o.model, turns, signal)
+    let model = this.compactModel
+    let { clusters, method } = await clusterTurns(this.compactAdapter(model), model, turns, signal)
+    // clusterTurns swallows model errors (keyword fallback); retry once with the chat's model
+    if (method === 'lexical' && model !== this.o.model && turns.length > 2 && !signal?.aborted) {
+      const r = await clusterTurns(this.compactAdapter(this.o.model), this.o.model, turns, signal)
+      if (r.method !== 'lexical') { ({ clusters, method } = r); model = this.o.model }
+    }
     return {
       turns: turns.map((t) => ({ index: t.index, user: t.user, answer: t.answer, tools: t.tools, tokens: estimateTokens(t.messages) })),
-      clusters, method, hasPriorSummary: !!priorSummary(this.history), tokens: this.tokenEstimate
+      clusters, method, model, hasPriorSummary: !!priorSummary(this.history), tokens: this.tokenEstimate
     }
   }
 
@@ -153,11 +189,11 @@ export class Session {
       const turns = splitHistoryTurns(this.history)
       const { kept, summarized, dropped } = planTurns(turns, plan)
       const keptIdx = kept.map((t) => t.index)
-      if (!summarized.length && !dropped.length) return { before, after: before, summarized: 0, dropped: 0, summary: '', kept: keptIdx, compacted: [] as number[] }
-      const summary = await summarizeTurns(this.o.adapter, this.o.model, summarized, priorSummary(this.history), signal)
+      if (!summarized.length && !dropped.length) return { before, after: before, summarized: 0, dropped: 0, summary: '', model: '', kept: keptIdx, compacted: [] as number[] }
+      const { text: summary, model } = await this.withCompactModel(async (a, m) => ({ text: await summarizeTurns(a, m, summarized, priorSummary(this.history), signal) }))
       const next = applyCompaction(this.history, summary, keptIdx)
       this.messages.splice(1, this.messages.length - 1, ...next)
-      return { before, after: this.tokenEstimate, summarized: summarized.length, dropped: dropped.length, summary, kept: keptIdx, compacted: [...summarized, ...dropped].map((t) => t.index) }
+      return { before, after: this.tokenEstimate, summarized: summarized.length, dropped: dropped.length, summary, model, kept: keptIdx, compacted: [...summarized, ...dropped].map((t) => t.index) }
     } finally { this.busy = false }
   }
 }

@@ -28,7 +28,7 @@ On first launch open **⚙ Settings** and set your model endpoint's **Base URL**
 ## Main features
 
 ### Agent
-- **Any OpenAI-compatible model** — streaming `/v1/chat/completions` with tool calling. The model list comes from `/v1/models`; switch models per chat.
+- **Model providers** — Settings → *Model providers* lists your providers, like Copilot's: any **OpenAI-compatible custom endpoint** (local model proxy, vLLM, OpenRouter, LiteLLM) and **Azure OpenAI** (resource host, API version, deployment names). Add several; the chat box groups models by provider and you switch models per chat. Keys are encrypted with the macOS Keychain.
 - **Tools (Copilot-equivalent)** — `shell` (sync, or `async` for servers/watchers) with `read_shell` / `write_shell` / `stop_shell` / `list_shells`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `web_fetch` (page → Markdown), `sql` (a per-chat SQLite scratch DB with a ready `todos` table for planning), `skill`, `task`, `read_agent`, `list_agents`, `ask_user`. Independent tool calls run in parallel. Copilot names (`view`, `create`, `bash`, `web`…) work in agent `tools:` lists.
 - **Interactive / Autopilot** — per chat, next to the folder below the chat box. **Autopilot** (the default) runs shell, file and web tools without asking; **Interactive** asks first (*allow once*, *allow for this chat*, or *deny*). Switching to Autopilot approves anything the chat is waiting on. Set the default for new chats in Settings.
 - **Copilot-style activity** — each tool call shows a plain description ("Install dependencies", "Edit src/app.ts", "Fetch docs.python.org/…") instead of the tool name; consecutive calls fold into one row ("Run tests and 3 other tool calls"). Expand to see each call, and expand a call to see the `$ command` and its output in a terminal block, file diffs, or SQL results.
@@ -58,7 +58,7 @@ On first launch open **⚙ Settings** and set your model endpoint's **Base URL**
 ### Memory & context
 - **Share a session** — export **all turns or selected turns** to Markdown (optionally with tool calls and thinking), save to a file or copy to clipboard.
 - **Attach exports as memory** — *＋ Memory* attaches one or more exported `.md` files to a chat; the agent starts with them as prior context. Great for handing work between sessions or people.
-- **Smart compaction**: *⇲ Compact* (which also shows the estimated context size) has two modes. **Keep the last N turns** word-for-word and summarize everything before them, or **Choose turns** and set each turn to **Keep · Summarize · Drop**. You can set a turn singly, or set a whole **related-topic cluster** at once (clusters can be non-adjacent when a long chat pivoted and came back). Kept turns can be anywhere in the chat, so an important early instruction stays verbatim. Forks made after a compaction still line up with the right turns. Long chats can be flagged or auto-compacted past a token threshold (Settings → *Long chats*).
+- **Smart compaction**: *⇲ Compact* (which also shows the estimated context size) has two modes. **Keep the last N turns** word-for-word and summarize everything before them, or **Choose turns** and set each turn to **Keep · Summarize · Drop**. You can set a turn singly, or set a whole **related-topic cluster** at once (clusters can be non-adjacent when a long chat pivoted and came back). Kept turns can be anywhere in the chat, so an important early instruction stays verbatim. Forks made after a compaction still line up with the right turns. Settings → *Memory compaction* picks a separate (cheaper) **compaction model** and a **cache-aware auto-compact** policy: it waits until the chat has been idle long enough for the provider's prompt cache to expire, unless the chat is very large, and skips small gains (see [doc/memory-compaction.md](doc/memory-compaction.md#91-compaction-and-the-prompt-cache-why-auto-waits)).
 
 ### AI usage
 - **AI usage panel (⌘⇧U)**: the ring button in the sidebar footer, next to ⚙, opens it. The ring fills against an optional **daily budget** and turns amber at 80% and red at 100%; it shows today's estimated spend.
@@ -68,12 +68,14 @@ On first launch open **⚙ Settings** and set your model endpoint's **Base URL**
 
 ### Under the hood
 - Electron + React UI over a **headless TypeScript engine** (also usable from a CLI).
-- Sessions, forks and bookmarks are stored locally in SQLite (`node:sqlite`) at `~/.aitm-desk/aitm.db`, with settings in `~/.aitm-desk/settings.json`. Set `AITM_HOME` to use another folder. The API key is encrypted with the macOS Keychain (`safeStorage`). Builds before 0.3 kept these files in `~/Library/Application Support/aitm-desk/`; they are copied over on first launch and the originals are left in place as a backup.
+- Sessions, forks and bookmarks are stored locally in SQLite (`node:sqlite`) at `~/.aitm-desk/aitm.db`, with settings in `~/.aitm-desk/settings.json`. Set `AITM_HOME` to use another folder. Provider API keys are encrypted with the macOS Keychain (`safeStorage`). Builds before 0.3 kept these files in `~/Library/Application Support/aitm-desk/`; they are copied over on first launch and the originals are left in place as a backup.
 - No telemetry. The only network calls go to the model endpoint you configure (plus the optional project-usage command, if you set one).
 
 ## Model endpoint notes
 
 Any endpoint that speaks the OpenAI Chat Completions API with streaming + tools works. For the usage panel, the endpoint should honor `stream_options.include_usage` (a final chunk with `usage`, optionally with `prompt_tokens_details.cached_tokens`). Defaults: `http://127.0.0.1:4141/v1` (override in Settings or with `AITM_BASE_URL` / `AITM_API_KEY`).
+
+**Azure OpenAI:** add it under Settings → *Model providers* with the resource host (`https://<resource>.openai.azure.com`), an API key, the API version (default `2025-04-01-preview`) and one deployment name per line. Each deployment appears as a model (`<provider-id>::<deployment>` when Azure is not the primary provider).
 
 For thinking blocks the app sends `reasoning_effort` and a non-standard `include_reasoning: true` hint. Models that already stream `reasoning_content` (DeepSeek, GLM, gpt-oss, Qwen…) just work. For Anthropic Claude behind an OpenAI-style proxy, the proxy must enable Claude's (adaptive, summarized) extended thinking and map it to `reasoning_content`.
 

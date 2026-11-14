@@ -10,7 +10,7 @@ flowchart TB
   S --> L[runLoop<br/>loop.ts<br/>main agent]
   S --> AM[AgentManager<br/>manager.ts]
   S --> SH[ShellManager]
-  L -->|callModel| AD[OpenAIAdapter]
+  L -->|callModel| AD[ProviderRouter → OpenAI / Azure adapter]
   L -->|runTool| T[Tools]
   T -->|task| AM
   AM -->|spawn| L2[runLoop<br/>sub-agent]
@@ -28,7 +28,7 @@ flowchart TB
 | `AgentManager` | Tracks the agent tree, spawns sub-agents (sync or background), holds background results and notifications, cascades cancellation. |
 | `PermissionGate` | Decides whether a tool call may run (autopilot, remembered approvals, or ask the user). |
 | `Semaphore` | Caps simultaneous model requests per chat. |
-| `OpenAIAdapter` | Streams one chat completion and returns assembled deltas. |
+| `ProviderRouter` / `OpenAIAdapter` | Picks the provider that owns the model id, then streams one chat completion (OpenAI-compatible or Azure OpenAI) as deltas. |
 
 ## 2. The agent loop
 

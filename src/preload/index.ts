@@ -39,6 +39,7 @@ const api: DeskApi = {
   respondPermission: inv('respondPermission') as any,
   respondAsk: inv('respondAsk') as any,
   listModels: inv('listModels') as any,
+  testProvider: inv('testProvider') as any,
   pickFolder: inv('pickFolder') as any,
   getSettings: inv('getSettings') as any,
   getUsage: inv('getUsage') as any,

@@ -6,8 +6,9 @@ import { randomUUID } from 'node:crypto'
 import { Store } from './store'
 import { loadSettings, saveSettings, setSettingsDir, type Settings } from './settings'
 import { resolveDataHome, migrateDataHome } from './datahome'
-import { OpenAIAdapter } from '../engine/adapter/openai'
-import { Session } from '../engine/engine'
+import { ProviderRouter } from '../engine/adapter/router'
+import type { ProviderEntry } from '../shared/providers'
+import { COMPACT_ID, Session } from '../engine/engine'
 import { loadRegistry } from '../engine/registry/registry'
 import type { Message, PermissionDecision } from '../engine/types'
 import type { CompactItem, PushEvent } from '../shared/api'
@@ -16,7 +17,7 @@ import { insertBeforeTurn, liveTurnMap, orderRows, reorderIds, sliceItemsAtTurn,
 import { prepareAttachment, type AttachInput } from './attachments'
 import type { Attachment } from '../engine/content'
 import { getLocalUsage, getProjectUsage, loadPricing, usageCommand } from './usage'
-import { estimateTokens, keepLastPlan, splitHistoryTurns, type CompactPlan } from '../engine/compact'
+import { autoCompactDecision, estimateTokens, keepLastPlan, splitHistoryTurns, type CompactPlan } from '../engine/compact'
 
 // GUI apps launched from Finder get a minimal PATH; give shell tools a usable one.
 process.env.PATH = [process.env.PATH, '/opt/homebrew/bin', '/usr/local/bin', path.join(os.homedir(), '.local/bin')].filter(Boolean).join(':')
@@ -38,10 +39,13 @@ const modeOf = (row: { mode?: string | null }): Mode => (row.mode as Mode) || se
 const stateDirOf = (id: string) => path.join(dataHome, 'sessions', id)
 const memoriesOf = (row: { memories?: string | null }): string[] => { try { return JSON.parse(row.memories || '[]') } catch { return [] } }
 const sharesDir = () => path.join(app.getPath('documents'), BRAND.name, 'shares')
-const adapter = () => new OpenAIAdapter({
-  baseUrl: settings.baseUrl, apiKey: settings.apiKey,
-  budget: () => ({ maxBytes: settings.requestMaxMB * 1024 * 1024, imageTurns: settings.imageTurns })
-})
+const budget = () => ({ maxBytes: settings.requestMaxMB * 1024 * 1024, imageTurns: settings.imageTurns })
+const router = (providers: ProviderEntry[] = settings.providers) => new ProviderRouter(providers, budget)
+/** Delegates to a router rebuilt whenever the providers change, so open chats pick up Settings edits. */
+let currentRouter: ProviderRouter | null = null
+const adapter = () => ({ stream: (req: any, signal: AbortSignal) => (currentRouter ??= router()).stream(req, signal) })
+/** Last main/sub-agent model call per chat: the provider's prompt cache is warm for a few minutes after it. */
+const lastCall = new Map<string, number>()
 const prepare = (inputs: AttachInput[]) => Promise.all(inputs.map((i) => prepareAttachment(i, settings)))
 
 function getLive(id: string): Session {
@@ -52,10 +56,11 @@ function getLive(id: string): Session {
   s = new Session({
     adapter: adapter(), cwd: row.cwd, model: row.model, history: store.loadMessages(id),
     maxConcurrency: settings.maxConcurrency, maxTurnsMain: settings.maxTurnsMain, maxTurnsSub: settings.maxTurnsSub, reasoning: effortOf(row), memories: memoriesOf(row),
-    autoApprove: modeOf(row) === 'autopilot', stateDir: stateDirOf(id),
+    autoApprove: modeOf(row) === 'autopilot', stateDir: stateDirOf(id), compactModel: () => settings.compactModel,
     hooks: {
       onEvent: (event) => {
         if (event.kind === 'usage') {
+          if (event.agentId !== COMPACT_ID) lastCall.set(id, Date.now())
           try { store.addUsage({ ts: Date.now(), session_id: id, agent_id: event.agentId, model: event.model ?? row.model, prompt: event.prompt, cached: event.cached ?? 0, cache_write: event.cacheWrite ?? 0, completion: event.completion }) } catch { /* ledger is best-effort */ }
           push({ type: 'usage' })
         }
@@ -97,7 +102,7 @@ async function compactSession(id: string, plan: CompactPlan, auto = false) {
   store.saveMessages(id, s.history)
   const ui = (xs: number[]) => xs.map((i) => map[i] + 1).sort((a, b) => a - b)
   const sum = new Set(plan.summarize)
-  const item: CompactItem = { t: 'compact', auto, summarized: r.summarized, dropped: r.dropped, before: r.before, after: r.after, summary: r.summary,
+  const item: CompactItem = { t: 'compact', auto, summarized: r.summarized, dropped: r.dropped, before: r.before, after: r.after, summary: r.summary, model: r.model,
     keptTurns: ui(r.kept), summarizedTurns: ui(r.compacted.filter((i) => sum.has(i))), droppedTurns: ui(r.compacted.filter((i) => !sum.has(i))) }
   const beforeTurn = uiTurnCount(id)
   store.saveUiItems(id, insertBeforeTurn(store.loadUiItems(id) as Array<{ t: string }>, item, beforeTurn))
@@ -110,9 +115,12 @@ async function run(id: string, s: Session, prompt?: string, atts: Attachment[] =
   if (s.isBusy) { if (prompt || atts.length) void s.send(prompt, atts, qid); return }
   push({ type: 'busy', sessionId: id, busy: true })
   try {
-    if ((prompt || atts.length) && settings.autoCompact === 'auto' && s.tokenEstimate > settings.compactThreshold) {
+    if ((prompt || atts.length) && settings.autoCompact === 'auto') {
       const turns = splitHistoryTurns(s.history)
-      if (turns.length > settings.compactKeepRecent) {
+      const last = lastCall.get(id) ?? store.getSession(id)?.updated_at ?? 0
+      const d = autoCompactDecision({ mode: settings.autoCompact, tokens: s.tokenEstimate, threshold: settings.compactThreshold, hardLimit: settings.compactHardLimit,
+        idleMinutes: settings.compactIdleMinutes, idleMs: Date.now() - last, turns, keepRecent: settings.compactKeepRecent, minGain: settings.compactMinGain })
+      if (d.compact) {
         try { await compactSession(id, keepLastPlan(turns.length, settings.compactKeepRecent), true) }
         catch (e: any) { push({ type: 'agent', sessionId: id, event: { kind: 'error', agentId: 'main', message: `Auto-compact failed: ${e.message}` } }) }
       }
@@ -247,7 +255,14 @@ function registerIpc() {
   ipcMain.handle('respondPermission', (_e, rid: string, d: PermissionDecision) => { pending.get(rid)?.resolve(d); pending.delete(rid) })
   ipcMain.handle('respondAsk', (_e, rid: string, a: string) => { pending.get(rid)?.resolve(a); pending.delete(rid) })
   ipcMain.handle('listModels', async () => {
-    try { return { models: await adapter().listModels() } } catch (e: any) { return { models: [], error: e.message } }
+    const groups = await (currentRouter ??= router()).listGroups()
+    const models = groups.flatMap((g) => g.models)
+    const bad = groups.filter((g) => g.error)
+    return { models, groups, error: !groups.length ? 'no model provider is configured' : bad.length === groups.length ? bad.map((g) => `${g.name}: ${g.error}`).join('; ') : undefined }
+  })
+  ipcMain.handle('testProvider', async (_e, p: ProviderEntry) => {
+    const [g] = await router([{ ...p, enabled: true }]).listGroups()
+    return { models: g?.models ?? [], error: g?.error }
   })
   ipcMain.handle('pickFolder', async () => {
     const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory', 'createDirectory'] })
@@ -258,7 +273,7 @@ function registerIpc() {
   ipcMain.handle('getProjectUsage', (_e, days: number) => getProjectUsage(settings.usageCommand, days, settings.pricingPath, dataHome))
   ipcMain.handle('usageInfo', () => ({ command: usageCommand(settings.usageCommand), pricing: loadPricing(settings.pricingPath, dataHome).path }))
   ipcMain.handle('saveSettings', (_e, s: Settings) => {
-    settings = s; saveSettings(s)
+    settings = s; saveSettings(s); currentRouter = null
     for (const [id, sess] of live) {
       const row = store.getSession(id)
       if (!row?.reasoning) sess.setReasoning(s.reasoning)
