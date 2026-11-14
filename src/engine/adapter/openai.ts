@@ -13,6 +13,10 @@ export interface AdapterConfig {
   deployments?: string[]
   /** Read on every request so settings changes apply to open chats. */
   budget?: () => RequestBudget
+  /** Replaces fetch for the chat call (Vertex: Bearer token refresh + retries). */
+  fetch?: (url: string, init: RequestInit) => Promise<Response>
+  /** Last-moment edit of the request body (Vertex: reasoning field rules). */
+  shape?: (body: Record<string, any>) => void
 }
 
 /** Strips engine-only fields before sending messages upstream. */
@@ -71,8 +75,9 @@ export class OpenAIAdapter implements ModelAdapter {
       body.reasoning_effort = req.reasoning
       if (!this.azure) body.include_reasoning = true
     }
+    this.cfg.shape?.(body)
     const think = new ThinkSplitter()
-    const post = () => fetch(this.chatUrl(req.model), {
+    const post = () => (this.cfg.fetch ?? fetch)(this.chatUrl(req.model), {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...this.headers() },
       body: JSON.stringify(body),

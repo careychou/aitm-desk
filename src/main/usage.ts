@@ -4,6 +4,7 @@ import os from 'node:os'
 import { execFile, execFileSync } from 'node:child_process'
 import { localReport, projectReport, type Pricing, type UsageReport } from '../shared/usage'
 import type { Store } from './store'
+import { vertexLinesFromProxy } from '../shared/providers'
 
 /** First readable pricing.json: explicit setting, data home, then the HEB model proxy install. */
 export function loadPricing(explicit: string, dataHome: string): { pricing: Pricing | null; path: string | null } {
@@ -51,6 +52,22 @@ export function proxyRuntime(): ProxyRuntime {
   if (fs.existsSync(key)) proxyRt.env.GOOGLE_APPLICATION_CREDENTIALS = key
   else delete proxyRt.env.GOOGLE_APPLICATION_CREDENTIALS
   return proxyRt
+}
+
+/**
+ * Prefill for a new Google Vertex AI provider: the local model proxy's project, models and
+ * service-account key path (path only — the key is never read here).
+ */
+export function vertexDefaults(): { project: string; location: string; credentialsPath: string; models: string[]; visionModel: string } {
+  const out = { project: '', location: 'global', credentialsPath: proxyRuntime().env.GOOGLE_APPLICATION_CREDENTIALS ?? '', models: [] as string[], visionModel: '' }
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(os.homedir(), 'heb-model-proxy', 'models.json'), 'utf8'))
+    out.project = j.project ?? ''
+    out.location = j.default_location || 'global'
+    out.models = vertexLinesFromProxy(j)
+    out.visionModel = j.vision_fallback_model ?? ''
+  } catch { /* no local proxy config */ }
+  return out
 }
 
 /** How to launch a usage command: python scripts run under the proxy's interpreter (GUI apps get the system python, which lacks google-auth). */

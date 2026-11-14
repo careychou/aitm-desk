@@ -382,3 +382,6 @@ button.danger { color: var(--fail); }
 .usage-table tr.click { cursor: pointer; }
 .usage-table tr.click:hover td { background: var(--hover); }
 .usage-warn { font-size: 12px; color: #9a6700; padding-left: 18px; }
+.input-btn { display: flex; gap: 6px; }
+.input-btn input { flex: 1; min-width: 0; }
+.input-btn button { flex-shrink: 0; }

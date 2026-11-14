@@ -16,7 +16,7 @@ import { BRAND } from '../shared/brand'
 import { insertBeforeTurn, liveTurnMap, orderRows, reorderIds, sliceItemsAtTurn, sliceMessagesAtTurn } from '../shared/fork'
 import { prepareAttachment, type AttachInput } from './attachments'
 import type { Attachment } from '../engine/content'
-import { getLocalUsage, getProjectUsage, loadPricing, usageCommand } from './usage'
+import { getLocalUsage, getProjectUsage, loadPricing, usageCommand, vertexDefaults } from './usage'
 import { autoCompactDecision, estimateTokens, keepLastPlan, splitHistoryTurns, type CompactPlan } from '../engine/compact'
 
 // GUI apps launched from Finder get a minimal PATH; give shell tools a usable one.
@@ -261,13 +261,18 @@ function registerIpc() {
     return { models, groups, error: !groups.length ? 'no model provider is configured' : bad.length === groups.length ? bad.map((g) => `${g.name}: ${g.error}`).join('; ') : undefined }
   })
   ipcMain.handle('testProvider', async (_e, p: ProviderEntry) => {
-    const [g] = await router([{ ...p, enabled: true }]).listGroups()
+    const [g] = await router([{ ...p, enabled: true }]).listGroups(true)
     return { models: g?.models ?? [], error: g?.error }
   })
   ipcMain.handle('pickFolder', async () => {
     const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory', 'createDirectory'] })
     return r.canceled ? null : r.filePaths[0]
   })
+  ipcMain.handle('pickFile', async (_e, opts?: { title?: string; extensions?: string[] }) => {
+    const r = await dialog.showOpenDialog(win!, { title: opts?.title, properties: ['openFile', 'showHiddenFiles'], filters: opts?.extensions ? [{ name: 'Files', extensions: opts.extensions }] : undefined })
+    return r.canceled ? null : r.filePaths[0]
+  })
+  ipcMain.handle('vertexDefaults', () => vertexDefaults())
   ipcMain.handle('getSettings', () => settings)
   ipcMain.handle('getUsage', (_e, days: number) => getLocalUsage(store, days, settings.pricingPath, dataHome))
   ipcMain.handle('getProjectUsage', (_e, days: number) => getProjectUsage(settings.usageCommand, days, settings.pricingPath, dataHome))

@@ -1,5 +1,6 @@
 import type { ChatRequest, Delta, ModelAdapter } from '../types'
 import { OpenAIAdapter, type AdapterConfig } from './openai'
+import { VertexAdapter } from './vertex'
 import type { RequestBudget } from '../content'
 
 import { qualify, splitModel, type ModelGroup, type ProviderEntry } from '../../shared/providers'
@@ -7,7 +8,7 @@ export * from '../../shared/providers'
 
 /** Routes each request to the provider that owns the model id. */
 export class ProviderRouter implements ModelAdapter {
-  private adapters = new Map<string, OpenAIAdapter>()
+  private adapters = new Map<string, OpenAIAdapter | VertexAdapter>()
   private list: ProviderEntry[]
   /** Owner of unprefixed model ids: always the first stored provider, even when disabled, so ids never silently move to another provider. */
   private home?: ProviderEntry
@@ -16,12 +17,16 @@ export class ProviderRouter implements ModelAdapter {
     this.home = providers[0]
     this.list = providers.filter((p) => p.enabled !== false)
     for (const p of this.list) {
+      if (p.kind === 'vertex') {
+        this.adapters.set(p.id, new VertexAdapter({ project: p.project ?? '', location: p.location, credentialsPath: p.credentialsPath, models: p.models ?? [], visionModel: p.visionModel, cacheTtl: p.cacheTtl, budget, endpoint: p.baseUrl || undefined }))
+        continue
+      }
       const cfg: AdapterConfig = { baseUrl: p.baseUrl, apiKey: p.apiKey, kind: p.kind, apiVersion: p.apiVersion, deployments: p.deployments, budget }
       this.adapters.set(p.id, new OpenAIAdapter(cfg))
     }
   }
 
-  private resolve(model: string): { adapter: OpenAIAdapter; model: string } {
+  private resolve(model: string): { adapter: OpenAIAdapter | VertexAdapter; model: string } {
     const { provider, model: bare } = splitModel(model)
     const id = provider ?? this.home?.id
     const a = id ? this.adapters.get(id) : undefined
@@ -34,10 +39,12 @@ export class ProviderRouter implements ModelAdapter {
     return adapter.stream({ ...req, model }, signal)
   }
 
-  async listGroups(): Promise<ModelGroup[]> {
+  /** `deep`: also prove credentials work (Vertex mints a token and pings a model). */
+  async listGroups(deep = false): Promise<ModelGroup[]> {
     return Promise.all(this.list.map(async (p) => {
       try {
-        const ms = await this.adapters.get(p.id)!.listModels()
+        const a = this.adapters.get(p.id)!
+        const ms = deep && a instanceof VertexAdapter ? await a.verify() : await a.listModels()
         return { provider: p.id, name: p.name, kind: p.kind, models: p.id === this.home?.id ? ms : ms.map((m) => qualify(p.id, m)) }
       } catch (e: any) {
         return { provider: p.id, name: p.name, kind: p.kind, models: [], error: String(e.message ?? e) }

@@ -1,6 +1,6 @@
 /** Model-provider types and pure helpers, shared by the engine router, main process and renderer. */
 
-export type ProviderKind = 'openai' | 'azure'
+export type ProviderKind = 'openai' | 'azure' | 'vertex'
 
 /** One configured model provider (Settings → Model providers). */
 export interface ProviderEntry {
@@ -14,7 +14,47 @@ export interface ProviderEntry {
   apiVersion?: string
   /** Azure only: deployment names (each is a model in the picker). */
   deployments?: string[]
+  /** Vertex only: GCP project id. */
+  project?: string
+  /** Vertex only: default region (`global` for Model Bank MaaS models). */
+  location?: string
+  /** Vertex only: path to a service-account JSON key (the key itself is never stored). Empty = ADC / gcloud. */
+  credentialsPath?: string
+  /** Vertex only: model lines, `<publisher>/<model> [@location] [describe]`. */
+  models?: string[]
+  /** Vertex only: model that transcribes images for text-only (`describe`) models. */
+  visionModel?: string
+  /** Vertex only: Claude prompt-cache TTL. */
+  cacheTtl?: '5m' | '1h' | 'off'
   enabled?: boolean
+}
+
+export interface VertexModel { id: string; location: string; vision: true | 'describe' }
+
+/**
+ * Parses Vertex model lines: `anthropic/claude-sonnet-5`, `google/gemini-2.5-pro @us-central1`,
+ * `zai-org/glm-5.2-maas describe` (text-only: images are transcribed by the vision model).
+ * Blank lines and `#` comments are ignored.
+ */
+export function parseVertexModels(lines: string[], defaultLocation = 'global'): VertexModel[] {
+  const out: VertexModel[] = []
+  for (const raw of lines) {
+    const toks = raw.replace(/#.*/, '').trim().split(/\s+/).filter(Boolean)
+    if (!toks.length) continue
+    const m: VertexModel = { id: toks[0], location: defaultLocation, vision: true }
+    for (const t of toks.slice(1)) {
+      if (t.startsWith('@') && t.length > 1) m.location = t.slice(1)
+      else if (/^(describe|text-only|novision)$/i.test(t)) m.vision = 'describe'
+    }
+    if (!out.some((x) => x.id === m.id)) out.push(m)
+  }
+  return out
+}
+
+/** Model lines from a heb-model-proxy style models.json (`models: [{id, location, vision}]`). */
+export function vertexLinesFromProxy(cfg: { default_location?: string; models?: Array<{ id: string; location?: string; vision?: unknown }> }): string[] {
+  const def = cfg.default_location || 'global'
+  return (cfg.models ?? []).filter((m) => m?.id).map((m) => [m.id, m.location && m.location !== def ? `@${m.location}` : '', m.vision === 'describe' ? 'describe' : ''].filter(Boolean).join(' '))
 }
 
 export interface ModelGroup { provider: string; name: string; kind: ProviderKind; models: string[]; error?: string }

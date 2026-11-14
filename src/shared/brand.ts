@@ -8,6 +8,8 @@ export const BRAND = {
   logo: null as string | null,
   /** Name given to the provider migrated from the old single Base URL setting. */
   defaultProviderName: 'Custom endpoint',
+  /** Default name of a new Google Vertex AI provider. */
+  vertexProviderName: 'Google Vertex AI',
   /** Default model for memory compaction ('' = the chat's own model). */
   defaultCompactModel: ''
 }

@@ -41,6 +41,8 @@ const api: DeskApi = {
   listModels: inv('listModels') as any,
   testProvider: inv('testProvider') as any,
   pickFolder: inv('pickFolder') as any,
+  pickFile: inv('pickFile') as any,
+  vertexDefaults: inv('vertexDefaults') as any,
   getSettings: inv('getSettings') as any,
   getUsage: inv('getUsage') as any,
   getProjectUsage: inv('getProjectUsage') as any,

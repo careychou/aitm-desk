@@ -37,18 +37,48 @@ Contents: [1 Model adapter](#1-model-adapter-and-streaming) · [2 Attachments](#
 
 ### Model providers (`router.ts`, `shared/providers.ts`)
 
-Settings → **Model providers** holds a list of providers, like Copilot's "Configured providers". Two kinds exist today:
+Settings → **Model providers** holds a list of providers, like Copilot's "Configured providers". Three kinds exist today:
 
 | Kind | Request | Auth | Models |
 |---|---|---|---|
 | `openai` (Custom endpoint) | `POST {baseUrl}/chat/completions` | `Authorization: Bearer <key>` | `GET {baseUrl}/models` |
 | `azure` (Azure OpenAI) | `POST {host}/openai/deployments/{deployment}/chat/completions?api-version={v}` (default `2025-04-01-preview`; a trailing `/openai` or `/openai/v1` on the host is stripped) | `api-key: <key>` | the configured deployment names (no network call) |
+| `vertex` (Google Vertex AI) | Claude: `POST {host}/v1/projects/{p}/locations/{loc}/publishers/anthropic/models/{slug}:streamRawPredict`; others: `POST {host}/v1/projects/{p}/locations/{loc}/endpoints/openapi/chat/completions` (`host` = `aiplatform.googleapis.com` for `global`, else `{loc}-aiplatform.googleapis.com`) | `Authorization: Bearer <OAuth token>` minted from a service-account key | the configured model lines (Vertex has no MaaS listing call) |
 
 Azure differences handled by the adapter: `max_completion_tokens` instead of `max_tokens`, `reasoning_effort` without `include_reasoning`, and a single retry without `reasoning_effort` when a non-reasoning deployment (e.g. gpt-4o) answers 400 `unsupported_parameter`. Streaming, tool calls and usage are the same OpenAI wire format, so everything downstream (assembler, loop, usage ledger) is unchanged.
 
 `ProviderRouter` implements the same `ModelAdapter` interface. Model ids from the **first (primary) provider stay bare**, so chats created before providers existed keep working. Bare ids are pinned to that provider: if it is disabled they fail with a clear error instead of silently going to another provider, and there is no reordering (which would re-point existing chats); models of other providers are qualified as `<providerId>::<model>` (e.g. `azure::gpt-5`). `stream()` splits the prefix, picks the provider's adapter and sends the bare model. `listGroups()` asks every provider in parallel and returns per-provider errors, so one broken provider does not hide the others; the Composer shows the groups as `<optgroup>`s and displays the bare short name. Disabled providers are skipped and their qualified ids fail with a clear "not configured or is disabled" error.
 
 The main process holds one router and an adapter **proxy** (`{ stream: (r, s) => currentRouter.stream(r, s) }`) that every Session gets; saving settings drops the router, so open chats use the new providers on their next model call without being recreated.
+
+#### Google Vertex AI (native, no proxy) — `adapter/vertex.ts`, `adapter/vertex-auth.ts`
+
+The `vertex` kind does in-process what the local Python model proxy did, so the app talks to the GCP Model Bank directly.
+
+```mermaid
+flowchart LR
+  R[ProviderRouter] --> V[VertexAdapter]
+  V --> A[VertexAuth<br/>JWT RS256 → oauth2 token<br/>cached 40 min]
+  V -->|anthropic/*| C[toAnthropic + cache breakpoints<br/>:streamRawPredict<br/>Anthropic SSE → Delta]
+  V -->|everything else| O[OpenAIAdapter<br/>endpoints/openapi<br/>shape: reasoning rules]
+  V -->|model marked describe| D[vision model transcribes images<br/>cached per image hash]
+```
+
+**Configuration** (Settings → Model providers → Google Vertex AI): GCP **project**, default **location** (`global` for Model Bank MaaS), **service-account key path**, **model lines**, **vision model** for text-only models, and the **Claude prompt-cache TTL** (5 min / 1 h / off). "Add" and "Import from model proxy" prefill all of it from `~/heb-model-proxy/models.json` and the proxy LaunchAgent's `GOOGLE_APPLICATION_CREDENTIALS`. Model line syntax: `publisher/model [@location] [describe]`, e.g. `anthropic/claude-sonnet-5 @us-east5`, `zai-org/glm-5.2-maas describe`; `#` starts a comment.
+
+**Auth.** Only the key *path* is stored in settings. On demand `VertexAuth` reads the JSON and:
+- `service_account` → signs an RS256 JWT (`iss`=client_email, `scope`=cloud-platform, `aud`=token_uri, 1 h) with `node:crypto` and exchanges it with the JWT-bearer grant (no `google-auth-library` dependency);
+- `authorized_user` (gcloud ADC file) → refresh-token grant;
+- no path → `$GOOGLE_APPLICATION_CREDENTIALS` → `~/.config/gcloud/application_default_credentials.json` → `gcloud auth print-access-token`.
+Tokens are cached for 40 minutes, concurrent requests share one in-flight mint, a 401 forces one refresh, and 429/503 back off (0.6 s × attempt, up to 4 tries). A service account is exempt from the org's interactive re-auth policy, so it never asks the user to `gcloud auth login`.
+
+**Claude path.** `toAnthropic` translates the OpenAI-shaped history: system messages → `system`; assistant `tool_calls` → `tool_use` blocks; `role:tool` → user `tool_result` blocks; adjacent same-role turns merged (Anthropic needs alternation and grouped tool results); `data:` image URLs → base64 image blocks. Reasoning on → `thinking: {type:'adaptive', display:'summarized'}` + `output_config.effort`; `temperature`/`top_p` are never sent (Claude 5 rejects them). `applyPromptCache` places up to 4 `cache_control` breakpoints: last tool, system prompt, last block of the final message, last block of the previous user turn — the same rolling-prefix strategy described in [memory-compaction.md §9](memory-compaction.md). The request uses `:streamRawPredict`, so text, thinking and tool-argument JSON stream live; `anthropicDeltas` maps `content_block_*` / `message_delta` events to engine deltas and reports `prompt = input + cache_read + cache_write`, `cached = cache_read`, `cacheWrite = cache_creation` so the usage panel and cache-aware compaction see real cache hits.
+
+**OpenAI-compatible path** (Gemini, GLM, gpt-oss, DeepSeek, Gemma) reuses `OpenAIAdapter` with two hooks: `fetch` (Bearer token + retry) and `shape` (drop `include_reasoning`; for Gemini replace `reasoning_effort` with `extra_body.google.thinking_config.include_thoughts`, which Vertex rejects in combination).
+
+**Vision fallback.** Models marked `describe` cannot read images: each image is first transcribed by the vision model (default `google/gemini-3.8-flash`) with an exhaustive "be the eyes" prompt, and the text replaces the image part. Results are cached by SHA-256 of the data URL so later turns don't re-pay.
+
+**Test** mints a fresh token and sends a 1-token request to the first non-Claude model, proving key, project and IAM (`roles/aiplatform.user`) in one click. The local proxy is still needed only for tools that speak OpenAI to `127.0.0.1:4141` (e.g. GitHub Copilot BYOK).
 
 Keys are stored per provider, encrypted with Electron `safeStorage` (`providers[].apiKeyEnc` in `settings.json`). `migrateProviders` (pure, tested) converts pre-0.8 settings (`baseUrl` + `apiKeyEnc`) into the primary provider. The headless CLI still uses one endpoint from `AITM_BASE_URL` / `AITM_API_KEY` (default `http://127.0.0.1:4141/v1`).
 

@@ -70,6 +70,9 @@ export interface DeskApi {
   /** Lists the models of an unsaved provider entry (Settings → Model providers → Test). */
   testProvider(p: ProviderEntry): Promise<{ models: string[]; error?: string }>
   pickFolder(): Promise<string | null>
+  pickFile(opts?: { title?: string; extensions?: string[] }): Promise<string | null>
+  /** Prefill for a new Google Vertex AI provider from the local model proxy (project, models, key path). */
+  vertexDefaults(): Promise<{ project: string; location: string; credentialsPath: string; models: string[]; visionModel: string }>
   getSettings(): Promise<Settings>
   getUsage(days: number): Promise<UsageReport>
   getProjectUsage(days: number): Promise<UsageReport>
