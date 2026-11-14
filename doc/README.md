@@ -51,7 +51,7 @@ Key design decisions:
 | `src/engine/permissions.ts`, `semaphore.ts` | Approval gate, model-call concurrency |
 | `src/engine/compact.ts` | Compaction algorithms |
 | `src/engine/content.ts` | User content with attachments, request budget (`fitRequest`) |
-| `src/engine/adapter/` | OpenAI-compatible streaming client and delta assembler |
+| `src/engine/adapter/` | OpenAI-compatible / Azure streaming client, native Vertex AI adapter (Anthropic + openapi) and auth, provider router, delta assembler |
 | `src/engine/tools/` | Tool implementations and the tool catalog |
 | `src/main/` | Electron main: IPC, SQLite store, attachments, settings, usage, data home |
 | `src/shared/` | Pure helpers shared by main and renderer (fork, attach, usage, export) |
