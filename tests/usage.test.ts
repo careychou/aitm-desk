@@ -46,3 +46,25 @@ describe('usage', () => {
     expect(r.pricingAsOf).toBe('2026-10-01')
   })
 })
+
+describe('usageLaunch', () => {
+  it('runs python scripts under the proxy interpreter with its service-account env', async () => {
+    const fs = await import('node:fs'); const os = await import('node:os'); const path = await import('node:path')
+    const { usageLaunch } = await import('../src/main/usage')
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ul-'))
+    const py = path.join(dir, 'cost'); fs.writeFileSync(py, '#!/usr/bin/env python3\nprint(1)\n')
+    const sh = path.join(dir, 'cost.sh'); fs.writeFileSync(sh, '#!/bin/sh\necho 1\n')
+    const rt = { python: '/opt/homebrew/bin/python3', env: { GOOGLE_APPLICATION_CREDENTIALS: '/k/sa.json', PATH: '/opt/gcloud/bin' } }
+    const a = usageLaunch(py, ['--json'], rt, { PATH: '/usr/bin' })
+    expect(a.file).toBe('/opt/homebrew/bin/python3')
+    expect(a.args).toEqual([py, '--json'])
+    expect(a.env.GOOGLE_APPLICATION_CREDENTIALS).toBe('/k/sa.json')
+    expect(a.env.PATH!.split(':')[0]).toBe('/opt/gcloud/bin')
+    const b = usageLaunch(sh, ['--json'], rt, { PATH: '/usr/bin', GOOGLE_APPLICATION_CREDENTIALS: '/user.json' })
+    expect(b.file).toBe(sh)
+    expect(b.env.GOOGLE_APPLICATION_CREDENTIALS).toBe('/k/sa.json')
+    const c = usageLaunch(py, [], { python: null, env: {} }, { PATH: '/usr/bin', GOOGLE_APPLICATION_CREDENTIALS: '/user.json' })
+    expect(c.file).toBe(py)
+    expect(c.env.GOOGLE_APPLICATION_CREDENTIALS).toBe('/user.json')
+  })
+})
