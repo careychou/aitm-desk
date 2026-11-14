@@ -77,6 +77,10 @@ Any endpoint that speaks the OpenAI Chat Completions API with streaming + tools 
 
 For thinking blocks the app sends `reasoning_effort` and a non-standard `include_reasoning: true` hint. Models that already stream `reasoning_content` (DeepSeek, GLM, gpt-oss, Qwen…) just work. For Anthropic Claude behind an OpenAI-style proxy, the proxy must enable Claude's (adaptive, summarized) extended thinking and map it to `reasoning_content`.
 
+## Technical documentation
+
+See [`doc/`](doc/README.md) for how it works inside: [agent framework](doc/agent-framework.md) (loop, sub-agents, queue, tools), [memory compaction](doc/memory-compaction.md), and [other algorithms and internals](doc/algorithms-and-internals.md).
+
 ## Build from source
 
 Requires Node 22.5+ (for `node:sqlite`) — tested with Node 25.
@@ -106,7 +110,8 @@ src/main/      Electron main: settings (safeStorage), SQLite store, IPC
 src/preload/   contextBridge API
 src/renderer/  React UI
 src/shared/    fork/tree, export and usage/pricing helpers shared by main + renderer
-docs/          design spec + implementation plan
+doc/           technical docs: agent framework, memory compaction, algorithms
+docs/          original design spec + implementation plan (historical)
 ```
 
 ## Status
